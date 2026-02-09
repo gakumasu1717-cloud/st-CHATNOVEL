@@ -1,0 +1,13 @@
+{
+    "display_name": "Chat Novel",
+    "loading_order": 100,
+    "requires": [],
+    "optional": [],
+    "dependencies": [],
+    "js": "index.js",
+    "css": "styles/reader.css",
+    "author": "gakumasu1717-cloud",
+    "version": "1.0.0",
+    "homePage": "https://github.com/gakumasu1717-cloud/st-CHATNOVEL",
+    "auto_update": true
+}
