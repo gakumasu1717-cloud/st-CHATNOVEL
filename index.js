@@ -7,9 +7,7 @@ import { openReader, closeReader, isReaderOpen } from './src/reader.js';
 import { loadSettings } from './src/settings.js';
 
 // Extension metadata
-const MODULE_NAME = 'chat_novel';
 const extensionName = 'st-CHATNOVEL';
-const extensionFolderPath = `scripts/extensions/third-party/${extensionName}`;
 
 /**
  * Initialize the Chat Novel extension.
@@ -64,7 +62,7 @@ function addChatMenuButton() {
     // Also try to add directly to the extensions actions / data-area
     // This ensures broad compatibility
     waitForElement('#extensionsMenu, #extensions_menu2, #extrasPanelContainer').then((container) => {
-        if (!document.getElementById('chat_novel_button')) {
+        if (container && !document.getElementById('chat_novel_button')) {
             container.insertAdjacentHTML('beforeend', buttonHtml);
         }
     });
@@ -99,8 +97,10 @@ function addChatMenuButton() {
 
 /**
  * Register the /novel slash command.
+ * Tries legacy first, falls back to new SlashCommandParser. Only one will register.
  */
 function registerSlashCommand() {
+    // Try legacy registration first
     try {
         const context = SillyTavern.getContext();
         if (context.registerSlashCommand) {
@@ -108,21 +108,15 @@ function registerSlashCommand() {
                 openReader();
                 return '';
             }, [], '<span class="monospace">Opens the Chat Novel reader</span>', true, true);
+            console.log('[ChatNovel] /novel slash command registered (legacy)');
+            return; // Success — skip new-style registration
         }
     } catch (e) {
         console.debug('[ChatNovel] Slash command registration (legacy) skipped:', e.message);
     }
 
-    // Try the new way via SlashCommandParser
-    try {
-        const SlashCommandParser = window.SillyTavern?.getContext()?.SlashCommandParser;
-        if (!SlashCommandParser) {
-            // Alternative: direct import approach
-            tryNewSlashCommandRegistration();
-        }
-    } catch (e) {
-        console.debug('[ChatNovel] New slash command registration skipped:', e.message);
-    }
+    // Fall back to new-style SlashCommandParser
+    tryNewSlashCommandRegistration();
 }
 
 /**
@@ -132,7 +126,6 @@ async function tryNewSlashCommandRegistration() {
     try {
         const { SlashCommand } = await import('../../../../slash-commands/SlashCommand.js');
         const { SlashCommandParser } = await import('../../../../slash-commands/SlashCommandParser.js');
-        const { ARGUMENT_TYPE, SlashCommandArgument } = await import('../../../../slash-commands/SlashCommandArgument.js');
 
         SlashCommandParser.addCommandObject(SlashCommand.fromProps({
             name: 'novel',

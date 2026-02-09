@@ -66,7 +66,7 @@ export function createImageHtml(src, alt) {
              title="${escapedAlt}"
              loading="lazy"
              data-cn-processed="true"
-             onclick="window.ChatNovelLightbox && window.ChatNovelLightbox('${escapedSrc}', '${escapedAlt}')"
+
              onerror="this.onerror=null; this.parentElement.innerHTML='<div class=\\'cn-image-fallback\\'><span class=\\'cn-image-fallback-icon\\'>🖼️</span><span>${escapedAlt}</span></div>'"
         />
     </div>`;

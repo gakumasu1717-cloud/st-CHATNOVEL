@@ -3,6 +3,8 @@
  * Provides chapter navigation and text search.
  */
 
+import { escapeRegex } from './utils.js';
+
 /**
  * Create and manage the sidebar navigation.
  * @param {HTMLElement} container - The reader container
@@ -168,13 +170,4 @@ export function createSidebar(container, chapters, onChapterSelect) {
         },
         isOpen: () => isOpen,
     };
-}
-
-/**
- * Escape regex special chars for search.
- * @param {string} str
- * @returns {string}
- */
-function escapeRegex(str) {
-    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

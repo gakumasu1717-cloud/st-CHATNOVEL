@@ -253,7 +253,7 @@
 
 .cn-search-result-context {
     color: var(--cn-text-secondary);
-    word-break: break-all;
+    word-break: break-word;
 }
 
 .cn-search-highlight {

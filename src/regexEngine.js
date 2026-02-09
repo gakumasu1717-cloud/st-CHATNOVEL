@@ -94,15 +94,37 @@ export function applyRegexScript(script, text, options = {}) {
 
         let replaceStr = script.replaceString || '';
 
-        // Handle {{match}} macro
-        replaceStr = replaceStr.replace(/\{\{match\}\}/gi, '$0');
+        // Handle {{match}} macro — $& is the correct JS replacement for full match
+        replaceStr = replaceStr.replace(/\{\{match\}\}/gi, '$&');
 
-        // Handle character name substitution
+        // Handle {{charkey}} macro — ST's character folder key (avatar-based)
+        if (options.characterKey) {
+            replaceStr = replaceStr.replace(/\{\{charkey\}\}/gi, options.characterKey);
+        } else if (options.characterName) {
+            // Fallback: use character name if charkey not provided
+            replaceStr = replaceStr.replace(/\{\{charkey\}\}/gi, options.characterName);
+        }
+
+        // Handle {{char}} macro — character display name
         if (options.characterName) {
             replaceStr = replaceStr.replace(/\{\{char\}\}/gi, options.characterName);
         }
 
-        return text.replace(findRegex, replaceStr);
+        // Handle {{user}} macro
+        if (options.userName) {
+            replaceStr = replaceStr.replace(/\{\{user\}\}/gi, options.userName);
+        }
+
+        let result = text.replace(findRegex, replaceStr);
+
+        // Handle trimStrings option
+        if (script.trimStrings) {
+            for (const trimStr of script.trimStrings) {
+                result = result.replaceAll(trimStr, '');
+            }
+        }
+
+        return result;
     } catch (e) {
         console.warn(`[ChatNovel] Regex script error (${script.scriptName || 'unnamed'}):`, e);
         return text;

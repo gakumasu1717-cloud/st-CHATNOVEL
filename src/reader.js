@@ -15,6 +15,7 @@ import {
     getReadingPosition, createSettingsPanelHtml,
 } from './settings.js';
 import { exportToHtml, downloadHtml } from './exporter.js';
+import { escapeHtml } from './utils.js';
 
 /**
  * @typedef {Object} ReaderState
@@ -25,6 +26,8 @@ import { exportToHtml, downloadHtml } from './exporter.js';
  * @property {number} currentChapter
  * @property {Object|null} sidebar
  * @property {string} chatId
+ * @property {Function|null} _escHandler - ESC key handler reference for cleanup
+ * @property {AbortController|null} _abortController - For cleaning up event listeners
  */
 
 /** @type {ReaderState} */
@@ -36,6 +39,8 @@ const state = {
     currentChapter: 0,
     sidebar: null,
     chatId: '',
+    _escHandler: null,
+    _abortController: null,
 };
 
 /**
@@ -55,8 +60,12 @@ export function openReader() {
             return;
         }
 
-        // Generate a chat ID for position saving
-        state.chatId = `${characterName}_${chat.length}`;
+        // Generate a stable chat ID for position saving
+        // Use ST's chat metadata or first message timestamp for stability
+        const chatMeta = chat[0]?.chat_metadata || chat.find(m => m.chat_metadata)?.chat_metadata;
+        state.chatId = chatMeta?.chat_id_hash
+            || chatMeta?.integrity
+            || `${characterName}_${chat[0]?.send_date || 'unknown'}`;
 
         // Parse the chat
         const parsed = parseChatArray(chat, userName, characterName);
@@ -114,6 +123,18 @@ export function closeReader() {
         state.chapters = [];
         state.sidebar = null;
 
+        // Clean up ESC handler
+        if (state._escHandler) {
+            document.removeEventListener('keydown', state._escHandler);
+            state._escHandler = null;
+        }
+
+        // Clean up all AbortController-managed listeners (lightbox etc.)
+        if (state._abortController) {
+            state._abortController.abort();
+            state._abortController = null;
+        }
+
         // Clean up lightbox
         if (window.ChatNovelLightbox) {
             delete window.ChatNovelLightbox;
@@ -170,8 +191,8 @@ function createOverlay(settings, userName, characterName) {
     applyTheme(overlay, settings.theme);
     applyTypography(overlay, settings);
 
-    // Setup lightbox
-    setupLightbox(overlay);
+    // Setup lightbox (with AbortController for cleanup)
+    state._abortController = setupLightbox(overlay);
 
     // Render content
     const contentEl = overlay.querySelector('.cn-content');
@@ -205,14 +226,13 @@ function createOverlay(settings, userName, characterName) {
         handleExport(userName, characterName);
     });
 
-    // ESC to close
-    const escHandler = (e) => {
+    // ESC to close (store handler reference for cleanup)
+    state._escHandler = (e) => {
         if (e.key === 'Escape') {
             closeReader();
-            document.removeEventListener('keydown', escHandler);
         }
     };
-    document.addEventListener('keydown', escHandler);
+    document.addEventListener('keydown', state._escHandler);
 
     // Restore reading position
     const savedPos = getReadingPosition(state.chatId);
@@ -225,6 +245,14 @@ function createOverlay(settings, userName, characterName) {
     // Animate in
     requestAnimationFrame(() => {
         overlay.classList.add('cn-overlay-active');
+    });
+
+    // Set up event delegation for image lightbox (avoids inline onclick XSS risk)
+    contentEl.addEventListener('click', (e) => {
+        const img = e.target.closest('.cn-image');
+        if (img) {
+            window.ChatNovelLightbox?.(img.src, img.alt);
+        }
     });
 }
 
@@ -243,8 +271,22 @@ function renderAllChapters(contentEl, settings, userName, characterName) {
         characterName,
         dialogueEnabled: settings.dialogueEnabled,
         regexProcessor: (text, opts) => {
-            // Apply ST regex
-            let processed = applyAllRegex(text, opts);
+            // Resolve character key (avatar-based folder name)
+            let characterKey = characterName;
+            try {
+                const ctx = SillyTavern.getContext();
+                const avatar = ctx.characters?.[ctx.characterId]?.avatar;
+                if (avatar) {
+                    characterKey = avatar.replace(/\.png$/i, '');
+                }
+            } catch { /* fallback to characterName */ }
+
+            // Apply ST regex with charkey support
+            let processed = applyAllRegex(text, {
+                ...opts,
+                characterKey,
+                userName,
+            });
             // Process images
             if (settings.showImages) {
                 processed = processImages(processed, characterName);
@@ -581,14 +623,4 @@ async function handleExport(userName, characterName) {
  */
 export function isReaderOpen() {
     return state.isOpen;
-}
-
-/**
- * Escape HTML for display.
- * @param {string} str
- * @returns {string}
- */
-function escapeHtml(str) {
-    if (!str) return '';
-    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }

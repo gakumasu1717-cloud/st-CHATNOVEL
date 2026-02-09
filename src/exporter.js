@@ -98,6 +98,7 @@ export function downloadHtml(html, filename) {
 
 /**
  * Embed all images as base64 in the HTML string.
+ * Uses Promise.allSettled for parallel processing.
  * @param {string} html
  * @returns {Promise<string>}
  */
@@ -105,15 +106,26 @@ async function embedImagesAsBase64(html) {
     const imgRegex = /<img[^>]+src="([^"]+)"[^>]*>/gi;
     const matches = [...html.matchAll(imgRegex)];
 
-    for (const match of matches) {
-        const originalSrc = match[1];
-        if (originalSrc.startsWith('data:')) continue;
+    // Filter out already embedded images
+    const toProcess = matches.filter(m => !m[1].startsWith('data:'));
 
-        try {
-            const base64 = await imageToBase64(originalSrc);
-            html = html.replace(match[0], match[0].replace(originalSrc, base64));
-        } catch (e) {
-            console.warn(`[ChatNovel] Failed to embed image: ${originalSrc}`);
+    if (toProcess.length === 0) return html;
+
+    // Parallelize base64 conversion
+    const results = await Promise.allSettled(
+        toProcess.map(async (match) => {
+            const base64 = await imageToBase64(match[1]);
+            return { match, base64 };
+        })
+    );
+
+    for (const result of results) {
+        if (result.status === 'fulfilled') {
+            const { match, base64 } = result.value;
+            const originalSrc = match[1];
+            if (base64 !== originalSrc) { // Only replace if conversion succeeded
+                html = html.replace(match[0], match[0].replace(originalSrc, base64));
+            }
         }
     }
 

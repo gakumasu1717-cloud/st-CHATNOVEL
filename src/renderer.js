@@ -4,6 +4,8 @@
  * Handles Markdown, dialogue detection, and visual formatting.
  */
 
+import { escapeHtml, escapeRegex } from './utils.js';
+
 /**
  * Dialogue detection patterns for various quote styles.
  */
@@ -84,12 +86,13 @@ export function renderMarkdown(text) {
     // Links [text](url)
     html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
 
-    // Unordered lists
-    html = html.replace(/^[\s]*[-*+]\s+(.+)$/gm, '<li class="cn-list-item">$1</li>');
+    // Unordered lists (use - and + only; * conflicts with italic)
+    html = html.replace(/^[\s]*[-+]\s+(.+)$/gm, '<li class="cn-list-item">$1</li>');
     html = html.replace(/(<li[^>]*>.*<\/li>\n?)+/g, '<ul class="cn-list">$&</ul>');
 
     // Ordered lists
     html = html.replace(/^[\s]*\d+\.\s+(.+)$/gm, '<li class="cn-list-item cn-ol-item">$1</li>');
+    html = html.replace(/(<li class="cn-list-item cn-ol-item">.*<\/li>\n?)+/g, '<ol class="cn-list">$&</ol>');
 
     // Restore code blocks
     codeBlocks.forEach((block, idx) => {
@@ -99,17 +102,14 @@ export function renderMarkdown(text) {
         html = html.replace(`%%INLINECODE_${idx}%%`, code);
     });
 
-    // Paragraphs — wrap remaining lines
+    // Paragraphs — wrap remaining lines, skip any line starting with an HTML tag
     html = html
         .split('\n')
         .map(line => {
             const trimmed = line.trim();
             if (!trimmed) return '<br />';
-            if (trimmed.startsWith('<h') || trimmed.startsWith('<hr') ||
-                trimmed.startsWith('<pre') || trimmed.startsWith('<ul') ||
-                trimmed.startsWith('<ol') || trimmed.startsWith('<li') ||
-                trimmed.startsWith('<div') || trimmed.startsWith('<table') ||
-                trimmed.startsWith('</')) {
+            // Skip any line that starts with an HTML tag (opening or closing)
+            if (/^<\/?[a-zA-Z]/.test(trimmed)) {
                 return trimmed;
             }
             return `<p class="cn-paragraph">${trimmed}</p>`;
@@ -121,6 +121,7 @@ export function renderMarkdown(text) {
 
 /**
  * Detect and style dialogue in text.
+ * Operates on text content only, skipping HTML tags to avoid false matches.
  * @param {string} html - Already-rendered HTML
  * @param {boolean} enabled - Whether dialogue styling is enabled
  * @returns {string}
@@ -130,9 +131,16 @@ export function styleDialogue(html, enabled = true) {
 
     const dialogueRegex = buildDialogueRegex();
 
-    return html.replace(dialogueRegex, (match) => {
-        return `<span class="cn-dialogue">${match}</span>`;
-    });
+    // Split by HTML tags, only process text nodes
+    const parts = html.split(/(<[^>]*>)/g);
+    for (let i = 0; i < parts.length; i++) {
+        // Skip HTML tags (odd indices after split)
+        if (parts[i].startsWith('<')) continue;
+        parts[i] = parts[i].replace(dialogueRegex, (match) => {
+            return `<span class="cn-dialogue">${match}</span>`;
+        });
+    }
+    return parts.join('');
 }
 
 /**
@@ -313,24 +321,16 @@ function formatDate(date) {
 
 /**
  * Escape HTML special characters.
+ * @deprecated Use import from utils.js instead. Kept for internal compatibility.
  * @param {string} str
  * @returns {string}
  */
-export function escapeHtml(str) {
-    if (!str) return '';
-    return str
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#x27;');
-}
+// escapeHtml is now imported from utils.js
 
 /**
  * Escape special regex characters.
+ * @deprecated Use import from utils.js instead. Kept for internal compatibility.
  * @param {string} str
  * @returns {string}
  */
-function escapeRegex(str) {
-    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
+// escapeRegex is now imported from utils.js

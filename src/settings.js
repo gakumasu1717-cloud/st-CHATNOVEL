@@ -89,12 +89,15 @@ export function updateSetting(key, value) {
 
 /**
  * Save reading position for a specific chat.
+ * Uses LRU cleanup to prevent unbounded growth.
  * @param {string} chatId
  * @param {Object} position
  * @param {number} position.chapterIndex
  * @param {number} position.scrollTop
  * @param {number} position.progress
  */
+const MAX_READING_POSITIONS = 100;
+
 export function saveReadingPosition(chatId, position) {
     if (!chatId) return;
     const settings = loadSettings();
@@ -105,6 +108,16 @@ export function saveReadingPosition(chatId, position) {
         ...position,
         timestamp: Date.now(),
     };
+
+    // LRU cleanup: keep only the most recent N entries
+    const entries = Object.entries(settings.readingPositions);
+    if (entries.length > MAX_READING_POSITIONS) {
+        entries.sort((a, b) => (a[1].timestamp || 0) - (b[1].timestamp || 0));
+        for (let i = 0; i < entries.length - MAX_READING_POSITIONS; i++) {
+            delete settings.readingPositions[entries[i][0]];
+        }
+    }
+
     saveSettings();
 }
 
