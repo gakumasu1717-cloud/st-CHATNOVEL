@@ -952,3 +952,59 @@
 #chat_novel_top_button:hover {
     opacity: 1;
 }
+
+/* ===== ST DOM-sourced HTML scoping ===== */
+/* Reset any ST .mes_text styles that may leak into the reader */
+.cn-overlay .mes_text {
+    all: unset;
+    display: block;
+}
+
+/* Style ST-rendered elements inside message bodies */
+.cn-msg-body img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 8px;
+    cursor: pointer;
+    margin: 8px 0;
+    transition: transform 0.2s, box-shadow 0.2s;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
+}
+
+.cn-msg-body img:hover {
+    transform: scale(1.01);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.cn-msg-body details {
+    margin: 8px 0;
+    padding: 8px 12px;
+    background: var(--cn-card-bg);
+    border: 1px solid var(--cn-border);
+    border-radius: 6px;
+}
+
+.cn-msg-body summary {
+    cursor: pointer;
+    font-weight: 600;
+    margin-bottom: 4px;
+    color: var(--cn-text);
+}
+
+.cn-msg-body table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 8px 0;
+}
+
+.cn-msg-body th,
+.cn-msg-body td {
+    padding: 6px 10px;
+    border: 1px solid var(--cn-border);
+    text-align: left;
+}
+
+.cn-msg-body th {
+    background: var(--cn-card-bg);
+    font-weight: 600;
+}

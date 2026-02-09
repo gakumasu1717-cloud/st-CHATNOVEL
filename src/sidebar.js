@@ -6,6 +6,18 @@
 import { escapeRegex } from './utils.js';
 
 /**
+ * Strip HTML tags from a string, returning plain text.
+ * @param {string} html
+ * @returns {string}
+ */
+function stripHtml(html) {
+    if (!html) return '';
+    const tmp = document.createElement('div');
+    tmp.innerHTML = html;
+    return tmp.textContent || tmp.innerText || '';
+}
+
+/**
  * Create and manage the sidebar navigation.
  * @param {HTMLElement} container - The reader container
  * @param {Array} chapters - Chapter data
@@ -92,7 +104,7 @@ export function createSidebar(container, chapters, onChapterSelect) {
 
         chapters.forEach((chapter, chapterIdx) => {
             chapter.messages.forEach((msg, msgIdx) => {
-                const text = msg.mes || '';
+                const text = stripHtml(msg.renderedHtml) || msg.mes || '';
                 const lowerText = text.toLowerCase();
                 const pos = lowerText.indexOf(lowerQuery);
 

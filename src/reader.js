@@ -3,9 +3,8 @@
  * Manages the full-screen overlay reader interface.
  */
 
-import { parseChatArray } from './parser.js';
-import { applyAllRegex } from './regexEngine.js';
-import { processImages, setupLightbox } from './imageHandler.js';
+import { parseChatFromDOM } from './parser.js';
+import { setupLightbox, setupImageClickDelegation } from './imageHandler.js';
 import { chapterize } from './chapterizer.js';
 import { renderChapter } from './renderer.js';
 import { createSidebar } from './sidebar.js';
@@ -67,8 +66,8 @@ export function openReader() {
             || chatMeta?.integrity
             || `${characterName}_${chat[0]?.send_date || 'unknown'}`;
 
-        // Parse the chat
-        const parsed = parseChatArray(chat, userName, characterName);
+        // Parse the chat from ST's rendered DOM
+        const parsed = parseChatFromDOM();
         state.metadata = parsed.metadata;
 
         // Get settings
@@ -247,13 +246,8 @@ function createOverlay(settings, userName, characterName) {
         overlay.classList.add('cn-overlay-active');
     });
 
-    // Set up event delegation for image lightbox (avoids inline onclick XSS risk)
-    contentEl.addEventListener('click', (e) => {
-        const img = e.target.closest('.cn-image');
-        if (img) {
-            window.ChatNovelLightbox?.(img.src, img.alt);
-        }
-    });
+    // Set up event delegation for image lightbox
+    setupImageClickDelegation(contentEl);
 }
 
 /**
@@ -269,36 +263,16 @@ function renderAllChapters(contentEl, settings, userName, characterName) {
     const renderOptions = {
         userName,
         characterName,
-        dialogueEnabled: settings.dialogueEnabled,
-        regexProcessor: (text, opts) => {
-            // Resolve character key (avatar-based folder name)
-            let characterKey = characterName;
-            try {
-                const ctx = SillyTavern.getContext();
-                const avatar = ctx.characters?.[ctx.characterId]?.avatar;
-                if (avatar) {
-                    characterKey = avatar.replace(/\.png$/i, '');
-                }
-            } catch { /* fallback to characterName */ }
-
-            // Apply ST regex with charkey support
-            let processed = applyAllRegex(text, {
-                ...opts,
-                characterKey,
-                userName,
-            });
-            // Process images
-            if (settings.showImages) {
-                processed = processImages(processed, characterName);
-            }
-            return processed;
-        },
+        showSenderName: settings.showSenderName,
     };
 
     for (const chapter of state.chapters) {
         const chapterHtml = renderChapter(chapter, renderOptions);
         contentEl.insertAdjacentHTML('beforeend', chapterHtml);
     }
+
+    // Set up image click delegation for lightbox
+    setupImageClickDelegation(contentEl);
 }
 
 /**
@@ -554,11 +528,9 @@ function showSettingsPanel(userName, characterName) {
  * @param {string} characterName
  */
 function reRender(userName, characterName) {
-    const context = SillyTavern.getContext();
-    const chat = context.chat;
     const settings = getSettings();
 
-    const parsed = parseChatArray(chat, userName, characterName);
+    const parsed = parseChatFromDOM();
     state.chapters = chapterize(parsed.messages, {
         mode: settings.chapterMode,
         messagesPerChapter: settings.messagesPerChapter,

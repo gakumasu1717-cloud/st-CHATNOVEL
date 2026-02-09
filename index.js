@@ -97,32 +97,10 @@ function addChatMenuButton() {
 
 /**
  * Register the /novel slash command.
- * Tries legacy first, falls back to new SlashCommandParser. Only one will register.
+ * Tries new-style SlashCommandParser first, falls back to legacy.
  */
-function registerSlashCommand() {
-    // Try legacy registration first
-    try {
-        const context = SillyTavern.getContext();
-        if (context.registerSlashCommand) {
-            context.registerSlashCommand('novel', (_args) => {
-                openReader();
-                return '';
-            }, [], '<span class="monospace">Opens the Chat Novel reader</span>', true, true);
-            console.log('[ChatNovel] /novel slash command registered (legacy)');
-            return; // Success — skip new-style registration
-        }
-    } catch (e) {
-        console.debug('[ChatNovel] Slash command registration (legacy) skipped:', e.message);
-    }
-
-    // Fall back to new-style SlashCommandParser
-    tryNewSlashCommandRegistration();
-}
-
-/**
- * Attempt new-style slash command registration.
- */
-async function tryNewSlashCommandRegistration() {
+async function registerSlashCommand() {
+    // Try new-style SlashCommandParser first
     try {
         const { SlashCommand } = await import('../../../../slash-commands/SlashCommand.js');
         const { SlashCommandParser } = await import('../../../../slash-commands/SlashCommandParser.js');
@@ -139,8 +117,23 @@ async function tryNewSlashCommandRegistration() {
         }));
 
         console.log('[ChatNovel] /novel slash command registered (new style)');
+        return; // Success — skip legacy
     } catch (e) {
-        console.debug('[ChatNovel] New-style slash command registration failed:', e.message);
+        console.debug('[ChatNovel] New-style slash command registration skipped:', e.message);
+    }
+
+    // Fall back to legacy registration
+    try {
+        const context = SillyTavern.getContext();
+        if (context.registerSlashCommand) {
+            context.registerSlashCommand('novel', (_args) => {
+                openReader();
+                return '';
+            }, [], '<span class="monospace">Opens the Chat Novel reader</span>', true, true);
+            console.log('[ChatNovel] /novel slash command registered (legacy)');
+        }
+    } catch (e) {
+        console.debug('[ChatNovel] Slash command registration (legacy) failed:', e.message);
     }
 }
 

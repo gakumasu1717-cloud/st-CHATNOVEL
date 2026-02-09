@@ -387,6 +387,47 @@ function generateExportCSS(theme, typography) {
         .cn-hr { border: none; border-top: 1px solid ${theme.border}; margin: 20px 0; }
         a { color: ${theme.linkColor}; }
 
+        /* ST-rendered HTML elements */
+        .cn-msg-body img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+            cursor: pointer;
+            margin: 8px 0;
+        }
+
+        .cn-msg-body details {
+            margin: 8px 0;
+            padding: 8px 12px;
+            background: ${theme.cardBg};
+            border: 1px solid ${theme.border};
+            border-radius: 6px;
+        }
+
+        .cn-msg-body summary {
+            cursor: pointer;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .cn-msg-body table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 8px 0;
+        }
+
+        .cn-msg-body th,
+        .cn-msg-body td {
+            padding: 6px 10px;
+            border: 1px solid ${theme.border};
+            text-align: left;
+        }
+
+        .cn-msg-body th {
+            background: ${theme.cardBg};
+            font-weight: 600;
+        }
+
         /* Responsive */
         @media (max-width: 768px) {
             .cn-export-sidebar { display: none; }
