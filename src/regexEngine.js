@@ -102,9 +102,76 @@ export function applyRegexScript(script, text, options = {}) {
     }
 }
 
+// One-time diagnostic flag
+let _diagLogged = false;
+
+/**
+ * Collect regex scripts from all known ST storage locations.
+ * ST stores scripts in multiple possible paths depending on version/config.
+ * @param {Object} context - SillyTavern context
+ * @returns {Array} Array of regex script objects
+ */
+function collectRegexScripts(context) {
+    const scripts = [];
+    const ext = context.extensionSettings || {};
+
+    // Path 1: extensionSettings.regex (direct array — some ST versions)
+    if (Array.isArray(ext.regex)) {
+        scripts.push(...ext.regex);
+    }
+    // Path 2: extensionSettings.regex.scripts (nested)
+    else if (ext.regex && Array.isArray(ext.regex?.scripts)) {
+        scripts.push(...ext.regex.scripts);
+    }
+
+    // Path 3: extensionSettings.regex_scripts (alternate key)
+    if (Array.isArray(ext.regex_scripts)) {
+        scripts.push(...ext.regex_scripts);
+    }
+
+    // Path 4: Character-specific regex scripts (embedded in character data)
+    try {
+        const charId = context.characterId;
+        const charData = context.characters?.[charId]?.data;
+        if (charData?.extensions?.regex_scripts && Array.isArray(charData.extensions.regex_scripts)) {
+            scripts.push(...charData.extensions.regex_scripts);
+        }
+    } catch { /* ignore */ }
+
+    // One-time diagnostic log
+    if (!_diagLogged) {
+        _diagLogged = true;
+        console.log('[ChatNovel] === Regex Diagnostics ===');
+        console.log('[ChatNovel] extensionSettings keys:', Object.keys(ext).sort().join(', '));
+        console.log('[ChatNovel] ext.regex type:', typeof ext.regex,
+            Array.isArray(ext.regex) ? `(array, length=${ext.regex.length})` :
+            ext.regex ? `(object, keys=${Object.keys(ext.regex).join(',')})` : '(falsy)');
+        if (ext.regex_scripts) {
+            console.log('[ChatNovel] ext.regex_scripts:', Array.isArray(ext.regex_scripts) ? `array(${ext.regex_scripts.length})` : typeof ext.regex_scripts);
+        }
+        // Check character data
+        try {
+            const charData = context.characters?.[context.characterId]?.data;
+            if (charData?.extensions) {
+                console.log('[ChatNovel] char.data.extensions keys:', Object.keys(charData.extensions).join(', '));
+            }
+        } catch { /* ignore */ }
+        console.log('[ChatNovel] Total scripts found:', scripts.length);
+        if (scripts.length > 0) {
+            console.log('[ChatNovel] Script names:', scripts.map(s => s.scriptName || '(unnamed)').join(', '));
+        }
+        // Check if ST exposes getRegexedString globally
+        if (typeof window.getRegexedString === 'function') {
+            console.log('[ChatNovel] window.getRegexedString is available');
+        }
+    }
+
+    return scripts;
+}
+
 /**
  * Apply all matching ST regex scripts to a message string.
- * Reads scripts from SillyTavern.getContext().extensionSettings.
+ * Searches multiple ST storage paths for regex scripts.
  * @param {string} text - The raw message text
  * @param {Object} options
  * @param {boolean} options.isUser - Whether the message is from the user
@@ -119,17 +186,10 @@ export function applyAllRegex(text, options = {}) {
     try {
         const context = SillyTavern.getContext();
 
-        // Try multiple paths where ST stores regex scripts
-        const extSettings = context.extensionSettings;
-        let scripts = extSettings?.regex?.scripts    // { regex: { scripts: [...] } }
-            || extSettings?.regex                     // { regex: [...] }
-            || null;
+        // Collect scripts from all possible locations
+        const scripts = collectRegexScripts(context);
 
-        if (!scripts || !Array.isArray(scripts)) {
-            // Debug: log available keys so we can find the correct path
-            if (extSettings?.regex) {
-                console.debug('[ChatNovel] regex settings found but scripts path unclear. Keys:', Object.keys(extSettings.regex));
-            }
+        if (scripts.length === 0) {
             return text;
         }
 
@@ -143,8 +203,6 @@ export function applyAllRegex(text, options = {}) {
             if (script.promptOnly) continue;
 
             // Check placement (2 = AI_OUTPUT, 1 = USER_INPUT, 0 = MD_DISPLAY)
-            // For novel display: apply AI_OUTPUT scripts to AI messages,
-            // USER_INPUT scripts to user messages, MD_DISPLAY to all
             if (script.placement && Array.isArray(script.placement)) {
                 const isAiOutput = script.placement.includes(2);
                 const isUserInput = script.placement.includes(1);
@@ -156,7 +214,6 @@ export function applyAllRegex(text, options = {}) {
 
             // markdownOnly = "only apply during display rendering, not API"
             // We ARE rendering for display, so we MUST apply these.
-            // (Previously skipped — caused [Status Update] etc. to not render)
 
             result = applyRegexScript(script, result, options);
         }
