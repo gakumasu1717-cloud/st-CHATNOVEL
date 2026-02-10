@@ -34,6 +34,50 @@
  */
 
 /**
+ * Extract visible HTML from a message element, stripping elements hidden by CSS.
+ * ST hides custom elements (e.g. <status>, extension UI) via `display: none`.
+ * Without stripping, these appear as raw text in the reader.
+ * @param {HTMLElement} textEl - The original .mes_text element (in DOM, with computed styles)
+ * @returns {string} Cleaned innerHTML
+ */
+function getVisibleHtml(textEl) {
+    const clone = textEl.cloneNode(true);
+    const origAll = textEl.querySelectorAll('*');
+    const cloneAll = clone.querySelectorAll('*');
+
+    // Collect indices of hidden elements (check computed styles on originals)
+    const hiddenIndices = [];
+    const hiddenOriginals = new Set();
+
+    for (let i = 0; i < origAll.length; i++) {
+        // If an ancestor is already hidden, skip — it'll be removed with the parent
+        let ancestorHidden = false;
+        let parent = origAll[i].parentElement;
+        while (parent && parent !== textEl) {
+            if (hiddenOriginals.has(parent)) {
+                ancestorHidden = true;
+                break;
+            }
+            parent = parent.parentElement;
+        }
+        if (ancestorHidden) continue;
+
+        const cs = getComputedStyle(origAll[i]);
+        if (cs.display === 'none' || cs.visibility === 'hidden') {
+            hiddenIndices.push(i);
+            hiddenOriginals.add(origAll[i]);
+        }
+    }
+
+    // Remove corresponding clone elements (reverse order to preserve indices)
+    for (let i = hiddenIndices.length - 1; i >= 0; i--) {
+        cloneAll[hiddenIndices[i]]?.remove();
+    }
+
+    return clone.innerHTML;
+}
+
+/**
  * Normalize send_date to a Date object.
  * Handles Unix timestamps (number or numeric string) and text date strings.
  * @param {string|number} sendDate
@@ -222,7 +266,7 @@ export function parseChatFromDOM() {
         const textEl = el.querySelector('.mes_text');
 
         domMap.set(mesId, {
-            renderedHtml: textEl ? textEl.innerHTML : null,
+            renderedHtml: textEl ? getVisibleHtml(textEl) : null,
             domName: nameEl?.textContent?.trim() || '',
             isUser,
             isSystem,
