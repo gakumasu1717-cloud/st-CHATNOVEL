@@ -319,6 +319,17 @@ function renderAllChapters(contentEl, settings, userName, characterName) {
 
     // Render regex HTML blocks as visible iframes
     postProcessHtmlBlocks(contentEl);
+
+    // Remove "이전 정보" details blocks from rendered DOM.
+    // These show previous state comparison — useful in chat, noise in novel reader.
+    try {
+        contentEl.querySelectorAll('details').forEach((det) => {
+            const summary = det.querySelector('summary');
+            if (summary && /이전\s*정보/.test(summary.textContent)) {
+                det.remove();
+            }
+        });
+    } catch (e) { /* safety */ }
 }
 
 /**
