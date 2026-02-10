@@ -1038,15 +1038,24 @@ body.cn-reader-open {
     display: none;
 }
 
-/* Regex-output HTML documents in visible iframes (no collapsing) */
+/* Regex-output HTML documents rendered as iframes */
 .cn-regex-iframe {
     width: 100%;
+    max-width: 100%;
     border: none;
-    border-radius: 8px;
-    margin: 12px 0;
-    display: block;
-    background: transparent;
     overflow: hidden;
+    display: block;
+    margin: 12px 0;
+    border-radius: 8px;
+    min-height: 50px;
+    transition: height 0.3s ease;
+    background: transparent;
+}
+
+/* iframe loading placeholder (before height is set by JS) */
+.cn-regex-iframe:not([style*="height"]) {
+    height: 200px;
+    background: var(--cn-bg, #f8f9fa);
 }
 
 /* Blockquote styling */

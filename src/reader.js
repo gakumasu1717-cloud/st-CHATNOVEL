@@ -317,70 +317,69 @@ function renderAllChapters(contentEl, settings, userName, characterName) {
     // Set up image click delegation for lightbox
     setupImageClickDelegation(contentEl);
 
-    // Render regex HTML blocks as visible iframes
-    postProcessHtmlBlocks(contentEl);
+    // Set up iframe auto-resize for regex-output HTML documents
+    setupIframeAutoResize(contentEl);
 }
 
 /**
- * Convert hidden HTML block placeholders into visible iframes.
- * Regex scripts output complete HTML documents (<!DOCTYPE html>...).
- * Use iframes for CSS/JS isolation, rendered directly (no collapsing).
+ * Set up auto-resize for all .cn-regex-iframe elements.
+ * Uses MutationObserver to also handle dynamically added iframes.
  * @param {HTMLElement} contentEl
  */
-function postProcessHtmlBlocks(contentEl) {
-    const pendingEls = contentEl.querySelectorAll('.cn-regex-html-pending');
-    if (pendingEls.length === 0) {
-        const inHtml = contentEl.innerHTML.includes('cn-regex-html-pending');
-        console.log(`[ChatNovel] postProcessHtmlBlocks: 0 pending els. innerHTML len=${contentEl.innerHTML.length}, class in raw HTML: ${inHtml}`);
-        if (inHtml) {
-            // The class exists in raw HTML but not as a DOM element — parser issue
-            const idx = contentEl.innerHTML.indexOf('cn-regex-html-pending');
-            console.log(`[ChatNovel] context around pending class: ...${contentEl.innerHTML.substring(Math.max(0, idx - 100), idx + 100)}...`);
+function setupIframeAutoResize(contentEl) {
+    // Handle already-existing iframes
+    contentEl.querySelectorAll('.cn-regex-iframe').forEach(setupSingleIframe);
+
+    // Watch for newly added iframes (from dynamic content insertion)
+    const observer = new MutationObserver((mutations) => {
+        for (const mutation of mutations) {
+            for (const node of mutation.addedNodes) {
+                if (node.nodeType !== Node.ELEMENT_NODE) continue;
+                if (node.classList?.contains('cn-regex-iframe')) {
+                    setupSingleIframe(node);
+                }
+                const nested = node.querySelectorAll?.('.cn-regex-iframe');
+                if (nested) nested.forEach(setupSingleIframe);
+            }
         }
-        return;
-    }
+    });
+    observer.observe(contentEl, { childList: true, subtree: true });
+}
 
-    console.log(`[ChatNovel] Post-processing ${pendingEls.length} HTML blocks as iframes`);
-
-    pendingEls.forEach((el) => {
-        const html = el.textContent; // textContent auto-decodes HTML entities
-
-        const iframe = document.createElement('iframe');
-        iframe.className = 'cn-regex-iframe';
-        iframe.setAttribute('scrolling', 'no');
-        iframe.setAttribute('frameborder', '0');
-        el.replaceWith(iframe);
-
-        // Write HTML directly via document.write — no srcdoc escaping needed
-        const doc = iframe.contentDocument || iframe.contentWindow.document;
-        doc.open();
-        doc.write(html);
-        doc.close();
-
-        // Auto-resize iframe to fit content (multiple attempts for async JS rendering)
-        const resize = () => {
-            try {
-                const h = doc.documentElement ? doc.documentElement.scrollHeight : 0;
-                if (h > 0) iframe.style.height = h + 'px';
-            } catch (e) { /* safety */ }
-        };
-        // Resize on load event
-        iframe.addEventListener('load', resize);
-        // Retry resizes for content rendered by scripts inside the iframe
-        setTimeout(resize, 100);
-        setTimeout(resize, 500);
-        setTimeout(resize, 1500);
-        setTimeout(resize, 3000);
-
-        // MutationObserver for dynamic content changes inside iframe
+/**
+ * Set up a single iframe for auto-height resizing.
+ * Reads internal scrollHeight after load and watches for dynamic content changes
+ * (collapsible panels, etc.) via ResizeObserver.
+ * @param {HTMLIFrameElement} iframe
+ */
+function setupSingleIframe(iframe) {
+    iframe.addEventListener('load', () => {
         try {
-            const observer = new MutationObserver(resize);
-            observer.observe(doc.body || doc.documentElement, {
-                childList: true, subtree: true, attributes: true,
-            });
-            // Clean up observer after 10 seconds (content should be stable by then)
-            setTimeout(() => observer.disconnect(), 10000);
-        } catch (e) { /* safety */ }
+            const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+            const resize = () => {
+                const h = iframeDoc.documentElement?.scrollHeight
+                       || iframeDoc.body?.scrollHeight || 0;
+                if (h > 0) iframe.style.height = h + 'px';
+            };
+            resize();
+
+            // ResizeObserver for dynamic content (collapsible panels, etc.)
+            if (iframeDoc.body && window.ResizeObserver) {
+                const ro = new ResizeObserver(resize);
+                ro.observe(iframeDoc.body);
+                // Clean up after 30 seconds
+                setTimeout(() => ro.disconnect(), 30000);
+            }
+
+            // Retry resizes for scripts that render asynchronously
+            setTimeout(resize, 200);
+            setTimeout(resize, 800);
+            setTimeout(resize, 2000);
+        } catch (e) {
+            // Cross-origin restriction — use fallback height
+            console.warn('[ChatNovel] iframe resize failed:', e);
+            iframe.style.height = '400px';
+        }
     });
 }
 

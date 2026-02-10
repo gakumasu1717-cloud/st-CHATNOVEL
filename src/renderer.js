@@ -66,6 +66,36 @@ function unwrapPreviousInfoBlocks(text) {
     return text;
 }
 
+// ===== HTML Document → iframe Conversion =====
+
+/**
+ * Convert complete HTML documents (<!DOCTYPE html>...) in text to <iframe srcdoc>.
+ * ST regex scripts output full HTML documents with CSS + JS that need
+ * isolated rendering. iframe provides independent document context where
+ * scripts execute and styles don't leak.
+ *
+ * Must be called AFTER code fence extraction (OLD DOCTYPEs in ``` are already
+ * protected) but BEFORE markdown rendering.
+ *
+ * @param {string} text - Text with potential HTML documents
+ * @returns {string} Text with HTML documents replaced by iframe tags
+ */
+function convertHtmlDocsToIframes(text) {
+    if (!text) return text;
+
+    // Match complete HTML documents: <!DOCTYPE html>...</html> or <html>...</html>
+    const htmlDocPattern = /(?:<!DOCTYPE\s+html[^>]*>[\s\S]*?<\/html>|<html[^>]*>[\s\S]*?<\/html>)/gi;
+
+    return text.replace(htmlDocPattern, (match) => {
+        // Escape for srcdoc attribute: & → &amp;, " → &quot;
+        const escaped = match
+            .replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;');
+
+        return `<iframe class="cn-regex-iframe" srcdoc="${escaped}" sandbox="allow-scripts allow-same-origin" frameborder="0" scrolling="no"></iframe>`;
+    });
+}
+
 // ===== Choices Processing =====
 
 /**
@@ -117,10 +147,7 @@ function renderMarkdown(text) {
         return `\x00HTMLBLOCK${idx}\x00`;
     }
 
-    // *** Code fences MUST be extracted FIRST ***
-    // Regex scripts wrap OLD state in code fences (```) inside <details>이전 정보.
-    // If we extract DOCTYPEs first, we'd capture OLD DOCTYPEs inside code fences
-    // and turn them into broken iframes with no data.
+    // Code fences extracted first (OLD DOCTYPEs inside ``` become harmless <pre><code>)
     const codeBlocks = [];
     text = text.replace(/```(\w*)\n?([\s\S]*?)```/g, (match, lang, code) => {
         const idx = codeBlocks.length;
@@ -128,23 +155,11 @@ function renderMarkdown(text) {
         return `\x00CODEBLOCK${idx}\x00`;
     });
 
-    // Complete HTML documents from regex scripts (choices, status panels, etc.).
-    // MUST be before inline code extraction — backticks in HTML (template literals,
-    // etc.) would be captured as inline code and corrupt the DOCTYPE content.
-    let doctypeCount = 0;
-    text = text.replace(/<!DOCTYPE\s+html[^>]*>[\s\S]*?<\/html>/gi, (match) => {
-        doctypeCount++;
-        const idx = protectedBlocks.length;
-        protectedBlocks.push(
-            `<div class="cn-regex-html-pending" style="display:none">${escapeHtml(match)}</div>`
-        );
-        return `\x00HTMLBLOCK${idx}\x00`;
-    });
-    if (doctypeCount > 0) {
-        console.log(`[ChatNovel] renderMarkdown: extracted ${doctypeCount} DOCTYPEs into pending divs`);
-    }
+    // Protect <iframe> tags (already converted from DOCTYPEs by convertHtmlDocsToIframes)
+    // Must be before inline code — iframes contain srcdoc with backticks etc.
+    text = text.replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe>/gi, protectBlock);
 
-    // Protect inline code (AFTER DOCTYPE extraction to avoid corrupting HTML)
+    // Protect inline code
     const inlineCodes = [];
     text = text.replace(/`([^`]+)`/g, (match, code) => {
         const idx = inlineCodes.length;
@@ -309,11 +324,6 @@ function renderMarkdown(text) {
         text = text.replace(`\x00HTMLBLOCK${i}\x00`, () => block);
     });
 
-    const hasPending = text.includes('cn-regex-html-pending');
-    if (doctypeCount > 0) {
-        console.log(`[ChatNovel] renderMarkdown: output has cn-regex-html-pending: ${hasPending}, output length: ${text.length}`);
-    }
-
     return text;
 }
 
@@ -440,37 +450,21 @@ export function renderMessage(message, options) {
         });
     }
 
-    // 2.5. Unwrap "이전 정보" details blocks — remove the wrapper tags
-    // but KEEP the content inside. Current DOCTYPEs (status panels) are
-    // inside these blocks; stripping them would delete all state display.
-    // Code fences inside will still protect OLD DOCTYPEs from becoming iframes.
-    const beforeLen = text.length;
+    // 3. Unwrap "이전 정보" details blocks — remove wrapper tags, keep content.
+    // Current DOCTYPEs (status panels) are inside these blocks.
     text = unwrapPreviousInfoBlocks(text);
-    const hasDOCTYPE = /<!DOCTYPE/i.test(text);
-    console.log(`[ChatNovel] msg ${message._index}: unwrap이전정보: ${beforeLen} -> ${text.length} chars, DOCTYPE=${hasDOCTYPE}`);
 
-    // 3. Protect DOCTYPE blocks from choices processing.
-    // Regex scripts have their own choices UI (선택/대필 buttons) inside DOCTYPE docs.
-    // processChoices must NOT modify <choices> tags inside those documents.
-    const doctypeBlocks = [];
-    text = text.replace(/<!DOCTYPE\s+html[^>]*>[\s\S]*?<\/html>/gi, (match) => {
-        doctypeBlocks.push(match);
-        return `\x00DOCTYPEHOLD${doctypeBlocks.length - 1}\x00`;
-    });
+    // 4. Convert complete HTML documents → <iframe srcdoc> BEFORE markdown.
+    // Code fences protect OLD DOCTYPEs; only CURRENT ones (outside ```) are converted.
+    // Must be before choices processing — regex scripts have their own choices UI
+    // inside DOCTYPE docs that processChoices must not touch.
+    text = convertHtmlDocsToIframes(text);
 
-    // 4. Choices processing (fallback for patterns not caught by regex)
+    // 5. Choices processing (fallback for patterns not caught by regex).
+    // Safe now — DOCTYPEs are already converted to <iframe> tags.
     text = processChoices(text);
 
-    // 5. Restore DOCTYPE blocks (function callback avoids $ special-char interpretation)
-    doctypeBlocks.forEach((block, i) => {
-        text = text.replace(`\x00DOCTYPEHOLD${i}\x00`, () => block);
-    });
-    if (doctypeBlocks.length > 0) {
-        const stillHasDOCTYPE = /<!DOCTYPE/i.test(text);
-        console.log(`[ChatNovel] msg ${message._index}: restored ${doctypeBlocks.length} DOCTYPE blocks, DOCTYPE still present: ${stillHasDOCTYPE}`);
-    }
-
-    // 6. Markdown → HTML
+    // 6. Markdown → HTML (iframes are protected by renderMarkdown automatically)
     text = renderMarkdown(text);
 
     // 7. Dialogue styling
