@@ -58,7 +58,7 @@ export function renderChapter(chapter, options) {
             html += `<div class="cn-msg-sender">${escapeHtml(senderName)}</div>`;
         }
 
-        html += `<div class="cn-msg-body">${renderedText}</div>`;
+        html += `<div class="cn-msg-body mes_text">${renderedText}</div>`;
         html += '</div>';
     }
 

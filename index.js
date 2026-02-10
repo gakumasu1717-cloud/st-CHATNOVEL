@@ -75,24 +75,6 @@ function addChatMenuButton() {
             openReader();
         }
     });
-
-    // Also add a top-bar quick access button
-    const topBarButton = document.createElement('div');
-    topBarButton.id = 'chat_novel_top_button';
-    topBarButton.className = 'fa-solid fa-book-open interactable';
-    topBarButton.title = '📖 Chat Novel 리더';
-    topBarButton.style.cssText = 'cursor: pointer; font-size: 1.1em; padding: 2px;';
-    topBarButton.addEventListener('click', (e) => {
-        e.preventDefault();
-        openReader();
-    });
-
-    // Try to insert near the chat action buttons
-    waitForElement('#form_sheld .range-block-counter, #send_but_sheld, #rightSendForm').then((target) => {
-        if (target && !document.getElementById('chat_novel_top_button')) {
-            target.parentElement?.insertBefore(topBarButton, target);
-        }
-    });
 }
 
 /**

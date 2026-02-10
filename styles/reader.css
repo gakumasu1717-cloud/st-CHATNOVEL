@@ -973,21 +973,22 @@ body.cn-reader-open {
     }
 }
 
-/* ===== Top bar button ===== */
-#chat_novel_top_button {
-    opacity: 0.7;
-    transition: opacity 0.2s;
-}
-
-#chat_novel_top_button:hover {
-    opacity: 1;
-}
-
 /* ===== ST DOM-sourced HTML scoping ===== */
-/* Reset any ST .mes_text styles that may leak into the reader */
-.cn-overlay .mes_text {
-    all: unset;
-    display: block;
+/*
+ * .cn-msg-body has the `mes_text` class so ST extension CSS
+ * (JS-Slash-Runner, LALib panels, status, etc.) cascades naturally.
+ * Only override specific layout properties that conflict with the reader.
+ */
+.cn-msg-body.mes_text {
+    /* Prevent ST's .mes_text layout styles from breaking the reader */
+    padding: 0 !important;
+    margin: 0 !important;
+    min-height: unset !important;
+    /* Inherit reader typography */
+    font-family: inherit;
+    font-size: inherit;
+    line-height: inherit;
+    color: inherit;
 }
 
 /* Style ST-rendered elements inside message bodies */
