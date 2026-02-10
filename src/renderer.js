@@ -390,11 +390,6 @@ export function renderMessage(message, options) {
         });
     }
 
-    // 2.5. Strip "이전 정보" details blocks — noise in novel reading mode.
-    // Regex scripts wrap previous state in <details><summary>[ 이전 정보 ]</summary>...
-    // which is useful in chat but clutters the novel reader.
-    text = text.replace(/<details[^>]*>\s*<summary[^>]*>[^<]*이전\s*정보[^<]*<\/summary>[\s\S]*?<\/details>/gi, '');
-
     // 3. Protect DOCTYPE blocks from choices processing.
     // Regex scripts have their own choices UI (선택/대필 buttons) inside DOCTYPE docs.
     // processChoices must NOT modify <choices> tags inside those documents.

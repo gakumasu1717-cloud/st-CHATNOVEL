@@ -348,6 +348,19 @@ function postProcessHtmlBlocks(contentEl) {
         doc.write(html);
         doc.close();
 
+        // Remove "이전 정보" details blocks from iframe DOM.
+        // These show previous state and are noise in novel reading mode.
+        // Done at DOM level (not text regex) to handle nested <details> safely.
+        try {
+            const detailsEls = doc.querySelectorAll('details');
+            detailsEls.forEach((det) => {
+                const summary = det.querySelector('summary');
+                if (summary && /이전\s*정보/.test(summary.textContent)) {
+                    det.remove();
+                }
+            });
+        } catch (e) { /* safety */ }
+
         // Auto-resize iframe to fit content (multiple attempts for async JS rendering)
         const resize = () => {
             try {
