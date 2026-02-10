@@ -81,14 +81,13 @@ function renderMarkdown(text) {
         return `\x00HTMLBLOCK${idx}\x00`;
     }
 
-    // Convert complete HTML documents to sandboxed iframes
-    // Regex scripts (choices, status panels, etc.) output full <!DOCTYPE html> documents.
-    // These must be isolated in iframes to prevent CSS/JS leaking into the reader.
+    // Complete HTML documents from regex scripts (choices, status panels, etc.).
+    // Store as escaped text in hidden divs — post-processed into iframes by reader.js
+    // to avoid srcdoc attribute escaping issues that corrupt CSS/JS content.
     text = text.replace(/<!DOCTYPE\s+html[^>]*>[\s\S]*?<\/html>/gi, (match) => {
-        const escaped = match.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
         const idx = protectedBlocks.length;
         protectedBlocks.push(
-            `<iframe srcdoc="${escaped}" class="cn-regex-iframe" sandbox="allow-scripts allow-same-origin" onload="try{this.style.height=this.contentDocument.documentElement.scrollHeight+16+'px'}catch(e){}"></iframe>`
+            `<div class="cn-regex-html-pending" style="display:none">${escapeHtml(match)}</div>`
         );
         return `\x00HTMLBLOCK${idx}\x00`;
     });

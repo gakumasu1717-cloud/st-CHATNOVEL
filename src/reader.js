@@ -316,6 +316,48 @@ function renderAllChapters(contentEl, settings, userName, characterName) {
 
     // Set up image click delegation for lightbox
     setupImageClickDelegation(contentEl);
+
+    // Convert pending HTML blocks (from regex scripts) into live iframes
+    postProcessHtmlBlocks(contentEl);
+}
+
+/**
+ * Convert hidden HTML block placeholders into live iframes.
+ * Regex scripts output complete HTML documents (<!DOCTYPE html>...)</n * which are stored as escaped text content during markdown rendering.
+ * This function creates iframes and writes the HTML directly via document.write(),
+ * avoiding srcdoc attribute escaping issues.
+ * @param {HTMLElement} contentEl
+ */
+function postProcessHtmlBlocks(contentEl) {
+    const pendingEls = contentEl.querySelectorAll('.cn-regex-html-pending');
+    if (pendingEls.length === 0) return;
+
+    console.log(`[ChatNovel] Post-processing ${pendingEls.length} HTML blocks into iframes`);
+
+    pendingEls.forEach((el) => {
+        const html = el.textContent; // textContent auto-decodes HTML entities
+        const iframe = document.createElement('iframe');
+        iframe.className = 'cn-regex-iframe';
+        el.replaceWith(iframe);
+
+        // Write HTML directly — no attribute escaping needed
+        const doc = iframe.contentDocument || iframe.contentWindow.document;
+        doc.open();
+        doc.write(html);
+        doc.close();
+
+        // Auto-resize iframe to content height (multiple attempts for async rendering)
+        const resize = () => {
+            try {
+                const h = doc.documentElement.scrollHeight;
+                if (h > 0) iframe.style.height = h + 'px';
+            } catch (e) { /* cross-origin or detached */ }
+        };
+        iframe.addEventListener('load', resize);
+        setTimeout(resize, 300);
+        setTimeout(resize, 1000);
+        setTimeout(resize, 3000);
+    });
 }
 
 /**
