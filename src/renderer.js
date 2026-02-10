@@ -66,6 +66,7 @@ function processChoices(text) {
  * Render markdown-like text to HTML.
  * Handles headings, bold, italic, code, links, lists, HR, blockquotes.
  * Protects multi-line HTML blocks (from regex scripts) from line-based processing.
+ * Converts complete HTML documents to sandboxed iframes.
  * @param {string} text
  * @returns {string}
  */
@@ -80,8 +81,17 @@ function renderMarkdown(text) {
         return `\x00HTMLBLOCK${idx}\x00`;
     }
 
-    // Protect complete HTML documents (regex scripts often output these)
-    text = text.replace(/<!DOCTYPE\s+html[^>]*>[\s\S]*?<\/html>/gi, protectBlock);
+    // Convert complete HTML documents to sandboxed iframes
+    // Regex scripts (choices, status panels, etc.) output full <!DOCTYPE html> documents.
+    // These must be isolated in iframes to prevent CSS/JS leaking into the reader.
+    text = text.replace(/<!DOCTYPE\s+html[^>]*>[\s\S]*?<\/html>/gi, (match) => {
+        const escaped = match.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+        const idx = protectedBlocks.length;
+        protectedBlocks.push(
+            `<iframe srcdoc="${escaped}" class="cn-regex-iframe" sandbox="allow-scripts allow-same-origin" onload="try{this.style.height=this.contentDocument.documentElement.scrollHeight+16+'px'}catch(e){}"></iframe>`
+        );
+        return `\x00HTMLBLOCK${idx}\x00`;
+    });
 
     // Protect <style>...</style> blocks
     text = text.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, protectBlock);
@@ -111,15 +121,60 @@ function renderMarkdown(text) {
         return `\x00INLINECODE${idx}\x00`;
     });
 
-    // Process line by line
+    // === Line-by-line processing with HTML block depth tracking ===
+    // Block-level HTML elements that can span multiple lines.
+    // Content inside these must NOT be processed as markdown.
+    const blockOpenRe = /<(div|details|section|article|aside|nav|header|footer|form|fieldset|figure|main|iframe|pre|dl)\b/gi;
+    const blockCloseRe = /<\/(div|details|section|article|aside|nav|header|footer|form|fieldset|figure|main|iframe|pre|dl)\s*>/gi;
+
+    function countBlockOpens(str) { return (str.match(blockOpenRe) || []).length; }
+    function countBlockCloses(str) { return (str.match(blockCloseRe) || []).length; }
+
     let lines = text.split('\n');
     let result = [];
     let inList = false;
     let listType = '';
+    let htmlBlockDepth = 0;
 
     for (let i = 0; i < lines.length; i++) {
         let line = lines[i];
         const trimmed = line.trim();
+
+        // --- HTML block depth tracking ---
+        // When inside a block element, pass ALL lines through without markdown processing.
+        if (htmlBlockDepth > 0) {
+            const opens = countBlockOpens(trimmed);
+            const closes = countBlockCloses(trimmed);
+            htmlBlockDepth += opens - closes;
+            if (htmlBlockDepth < 0) htmlBlockDepth = 0;
+            result.push(line);
+            continue;
+        }
+
+        // Check if this line starts a multi-line HTML block
+        if (/^<[a-zA-Z]/.test(trimmed)) {
+            const opens = countBlockOpens(trimmed);
+            const closes = countBlockCloses(trimmed);
+            if (opens > closes) {
+                // Multi-line block starts here
+                htmlBlockDepth = opens - closes;
+                result.push(line);
+                continue;
+            }
+            // Balanced single-line block or non-block element — pass through
+            result.push(trimmed);
+            continue;
+        }
+
+        // Closing HTML tag on its own line (e.g. </div>) — pass through
+        if (/^<\/[a-zA-Z]/.test(trimmed)) {
+            const closes = countBlockCloses(trimmed);
+            // Should not happen if depth tracking is correct, but handle gracefully
+            htmlBlockDepth -= closes;
+            if (htmlBlockDepth < 0) htmlBlockDepth = 0;
+            result.push(trimmed);
+            continue;
+        }
 
         // Close list if non-list line
         if (inList && !trimmed.match(/^[\-\*]\s/) && !trimmed.match(/^\d+\.\s/)) {
@@ -178,12 +233,6 @@ function renderMarkdown(text) {
                 listType = 'ol';
             }
             result.push(`<li class="cn-list-item">${processInlineMarkdown(olMatch[1])}</li>`);
-            continue;
-        }
-
-        // HTML tag lines — don't wrap in <p>
-        if (/^<\/?[a-zA-Z]/.test(trimmed)) {
-            result.push(trimmed);
             continue;
         }
 

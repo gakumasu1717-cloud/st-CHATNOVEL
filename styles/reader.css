@@ -1030,6 +1030,19 @@ body.cn-reader-open {
     display: none;
 }
 
+/* Regex-output HTML documents rendered in sandboxed iframes */
+.cn-regex-iframe {
+    width: 100%;
+    min-height: 60px;
+    max-height: 800px;
+    border: none;
+    border-radius: 8px;
+    margin: 12px 0;
+    display: block;
+    background: transparent;
+    overflow: hidden;
+}
+
 /* Blockquote styling */
 .cn-msg-body blockquote,
 .cn-blockquote {
