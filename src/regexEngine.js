@@ -118,9 +118,20 @@ export function applyAllRegex(text, options = {}) {
 
     try {
         const context = SillyTavern.getContext();
-        const scripts = context.extensionSettings?.regex?.scripts;
 
-        if (!scripts || !Array.isArray(scripts)) return text;
+        // Try multiple paths where ST stores regex scripts
+        const extSettings = context.extensionSettings;
+        let scripts = extSettings?.regex?.scripts    // { regex: { scripts: [...] } }
+            || extSettings?.regex                     // { regex: [...] }
+            || null;
+
+        if (!scripts || !Array.isArray(scripts)) {
+            // Debug: log available keys so we can find the correct path
+            if (extSettings?.regex) {
+                console.debug('[ChatNovel] regex settings found but scripts path unclear. Keys:', Object.keys(extSettings.regex));
+            }
+            return text;
+        }
 
         let result = text;
 
@@ -128,7 +139,7 @@ export function applyAllRegex(text, options = {}) {
             // Skip disabled scripts
             if (script.disabled) continue;
 
-            // Skip prompt-only scripts
+            // Skip prompt-only scripts (only for API prompt building)
             if (script.promptOnly) continue;
 
             // Check placement (2 = AI_OUTPUT, 1 = USER_INPUT, 0 = MD_DISPLAY)
@@ -143,8 +154,9 @@ export function applyAllRegex(text, options = {}) {
                 if (!options.isUser && !isAiOutput && !isMdDisplay) continue;
             }
 
-            // Skip markdownOnly scripts — we handle those in our own renderer
-            if (script.markdownOnly) continue;
+            // markdownOnly = "only apply during display rendering, not API"
+            // We ARE rendering for display, so we MUST apply these.
+            // (Previously skipped — caused [Status Update] etc. to not render)
 
             result = applyRegexScript(script, result, options);
         }
