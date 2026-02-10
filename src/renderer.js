@@ -35,45 +35,64 @@ function substituteCharMacro(text, characterName) {
 
 /**
  * Strip <details> blocks whose summary contains "이전 정보".
- * Uses depth counting (not regex) to properly handle nested <details>.
- * Regex scripts wrap OLD state in: <details><summary>이전 정보</summary>```OLD```</details>
- * The OLD content may itself contain nested <details> (장비, 아이템, etc.)
- * so simple regex matching would break.
+ * Uses two strategies:
+ * 1. Pattern-based: look for ``` + </details> marker (most reliable)
+ * 2. Depth counting fallback: handle nested <details> by counting open/close
  * @param {string} text
  * @returns {string}
  */
 function stripPreviousInfoBlocks(text) {
     if (!text) return text;
 
-    const summaryRe = /<details[^>]*>\s*<summary[^>]*>[^<]*이전\s*정보[^<]*<\/summary>/i;
+    const headerRe = /<details[^>]*>\s*<summary[^>]*>[^<]*이전\s*정보[^<]*<\/summary>/i;
+    let iterations = 0;
     let match;
 
-    while ((match = summaryRe.exec(text)) !== null) {
+    while ((match = headerRe.exec(text)) !== null && iterations < 10) {
+        iterations++;
+        const afterMatch = text.substring(match.index + match[0].length);
+
+        // Strategy 1: Find ``` followed by </details> (the code-fence wrapping pattern)
+        const fenceEndRe = /```\s*<\/details\s*>/;
+        const fenceEndMatch = fenceEndRe.exec(afterMatch);
+        if (fenceEndMatch) {
+            const endPos = match.index + match[0].length + fenceEndMatch.index + fenceEndMatch[0].length;
+            text = text.substring(0, match.index) + text.substring(endPos);
+            continue;
+        }
+
+        // Strategy 2: Find </details> right after a line break (simple fallback)
+        const simpleEndRe = /\n<\/details\s*>/;
+        const simpleEndMatch = simpleEndRe.exec(afterMatch);
+        if (simpleEndMatch) {
+            const endPos = match.index + match[0].length + simpleEndMatch.index + simpleEndMatch[0].length;
+            text = text.substring(0, match.index) + text.substring(endPos);
+            continue;
+        }
+
+        // Strategy 3: Depth counting (last resort)
         let depth = 1;
         let pos = match.index + match[0].length;
-
+        let found = false;
         while (depth > 0 && pos < text.length) {
             const openIdx = text.indexOf('<details', pos);
             const closeIdx = text.indexOf('</details', pos);
-
-            if (closeIdx === -1) break; // No more closing tags — bail out
-
+            if (closeIdx === -1) break;
             if (openIdx !== -1 && openIdx < closeIdx) {
-                // Found a nested <details> before the next </details>
                 depth++;
                 pos = openIdx + 8;
             } else {
-                // Found a </details>
                 depth--;
                 if (depth === 0) {
-                    // This is the matching </details> for our block
                     const endIdx = text.indexOf('>', closeIdx) + 1;
                     text = text.substring(0, match.index) + text.substring(endIdx);
+                    found = true;
                     break;
                 }
                 pos = closeIdx + 10;
             }
         }
+        if (!found) break; // Prevent infinite loop
     }
 
     return text;
@@ -141,23 +160,23 @@ function renderMarkdown(text) {
         return `\x00CODEBLOCK${idx}\x00`;
     });
 
-    // Protect inline code
-    const inlineCodes = [];
-    text = text.replace(/`([^`]+)`/g, (match, code) => {
-        const idx = inlineCodes.length;
-        inlineCodes.push(`<code class="cn-inline-code">${escapeHtml(code)}</code>`);
-        return `\x00INLINECODE${idx}\x00`;
-    });
-
     // Complete HTML documents from regex scripts (choices, status panels, etc.).
-    // Now safe — DOCTYPEs inside code fences are already extracted as code blocks.
-    // Only REAL (current state) DOCTYPEs remain.
+    // MUST be before inline code extraction — backticks in HTML (template literals,
+    // etc.) would be captured as inline code and corrupt the DOCTYPE content.
     text = text.replace(/<!DOCTYPE\s+html[^>]*>[\s\S]*?<\/html>/gi, (match) => {
         const idx = protectedBlocks.length;
         protectedBlocks.push(
             `<div class="cn-regex-html-pending" style="display:none">${escapeHtml(match)}</div>`
         );
         return `\x00HTMLBLOCK${idx}\x00`;
+    });
+
+    // Protect inline code (AFTER DOCTYPE extraction to avoid corrupting HTML)
+    const inlineCodes = [];
+    text = text.replace(/`([^`]+)`/g, (match, code) => {
+        const idx = inlineCodes.length;
+        inlineCodes.push(`<code class="cn-inline-code">${escapeHtml(code)}</code>`);
+        return `\x00INLINECODE${idx}\x00`;
     });
 
     // Protect <style>...</style> blocks
@@ -444,10 +463,11 @@ export function renderMessage(message, options) {
     }
 
     // 2.5. Strip "이전 정보" details blocks BEFORE any HTML processing.
-    // Regex scripts wrap OLD state in <details><summary>이전 정보</summary>```OLD DOCTYPE```</details>.
-    // Must be removed before DOCTYPE extraction to avoid creating iframes from OLD (empty) data.
-    // Uses depth counting to safely handle nested <details> elements.
+    const beforeStripLen = text.length;
     text = stripPreviousInfoBlocks(text);
+    const hasDOCTYPE = /<!DOCTYPE/i.test(text);
+    const hasHtml = /<\/html>/i.test(text);
+    console.log(`[ChatNovel] msg ${message._index}: stripPreviousInfo: ${beforeStripLen} -> ${text.length} chars, DOCTYPE=${hasDOCTYPE}, </html>=${hasHtml}, first150=${JSON.stringify(text.substring(0, 150))}`);
 
     // 3. Protect DOCTYPE blocks from choices processing.
     // Regex scripts have their own choices UI (선택/대필 buttons) inside DOCTYPE docs.
