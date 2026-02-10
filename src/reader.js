@@ -40,6 +40,7 @@ const state = {
     chatId: '',
     _escHandler: null,
     _abortController: null,
+    _origChatEl: null,
 };
 
 /**
@@ -73,6 +74,14 @@ export function openReader() {
         createOverlayShell(settings, userName, characterName);
         state.isOpen = true;
         document.body.classList.add('cn-reader-open');
+
+        // Temporarily swap original #chat ID so our reader's #chat takes priority
+        const origChat = document.querySelector('#chat:not(.cn-content)');
+        if (origChat) {
+            origChat.id = '';
+            origChat.dataset.cnOrigChat = 'true';
+            state._origChatEl = origChat;
+        }
 
         // Defer heavy work to next frame to avoid blocking the click handler
         requestAnimationFrame(() => {
@@ -142,6 +151,13 @@ export function closeReader() {
 
         // Remove body scroll lock
         document.body.classList.remove('cn-reader-open');
+
+        // Restore original #chat ID
+        if (state._origChatEl) {
+            state._origChatEl.id = 'chat';
+            delete state._origChatEl.dataset.cnOrigChat;
+            state._origChatEl = null;
+        }
     }, 300);
 }
 
@@ -175,7 +191,7 @@ function createOverlayShell(settings, userName, characterName) {
         </div>
         <div class="cn-body">
             <div class="cn-sidebar-container"></div>
-            <div class="cn-content">
+            <div id="chat" class="cn-content">
                 <div class="cn-loading">로딩 중...</div>
             </div>
         </div>

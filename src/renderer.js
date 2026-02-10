@@ -51,15 +51,19 @@ export function renderChapter(chapter, options) {
         const renderedText = renderMessage(msg, options);
         const roleClass = msg.is_user ? 'cn-msg-user' : (msg.is_system ? 'cn-msg-system' : 'cn-msg-character');
         const senderName = msg.is_system ? '' : msg.name;
+        const isUserAttr = msg.is_user ? ' is_user' : '';
 
-        html += `<div class="cn-message ${roleClass}" data-msg-index="${msg._index}">`;
+        // Replicate ST DOM structure: .mes > .mes_block > .mes_text
+        // This ensures ST extension CSS selectors (.mes .mes_text choices, etc.) match.
+        html += `<div class="cn-message mes${isUserAttr} ${roleClass}" data-msg-index="${msg._index}">`;
+        html += '<div class="mes_block">';
 
         if (senderName && !msg.is_system && options.showSenderName !== false) {
             html += `<div class="cn-msg-sender">${escapeHtml(senderName)}</div>`;
         }
 
         html += `<div class="cn-msg-body mes_text">${renderedText}</div>`;
-        html += '</div>';
+        html += '</div></div>';
     }
 
     html += '</div></div>';

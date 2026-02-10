@@ -975,11 +975,12 @@ body.cn-reader-open {
 
 /* ===== ST DOM-sourced HTML scoping ===== */
 /*
- * .cn-msg-body has the `mes_text` class so ST extension CSS
- * (JS-Slash-Runner, LALib panels, status, etc.) cascades naturally.
- * Only override specific layout properties that conflict with the reader.
+ * Message DOM replicates ST structure: .mes > .mes_block > .mes_text
+ * + .cn-content has id="chat" so #chat selectors from ST extensions match.
+ * This ensures CSS from JS-Slash-Runner, LALib, etc. cascades correctly.
+ * Only override properties that conflict with the reader layout.
  */
-.cn-msg-body.mes_text {
+.cn-overlay .mes_text {
     /* Prevent ST's .mes_text layout styles from breaking the reader */
     padding: 0 !important;
     margin: 0 !important;
@@ -989,6 +990,21 @@ body.cn-reader-open {
     font-size: inherit;
     line-height: inherit;
     color: inherit;
+}
+
+/* Prevent ST .mes styles from adding unwanted backgrounds/borders */
+.cn-overlay .mes {
+    background: none !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    min-height: unset !important;
+}
+
+.cn-overlay .mes_block {
+    padding: 0 !important;
+    margin: 0 !important;
 }
 
 /* Style ST-rendered elements inside message bodies */
