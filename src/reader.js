@@ -329,7 +329,16 @@ function renderAllChapters(contentEl, settings, userName, characterName) {
  */
 function postProcessHtmlBlocks(contentEl) {
     const pendingEls = contentEl.querySelectorAll('.cn-regex-html-pending');
-    if (pendingEls.length === 0) return;
+    if (pendingEls.length === 0) {
+        const inHtml = contentEl.innerHTML.includes('cn-regex-html-pending');
+        console.log(`[ChatNovel] postProcessHtmlBlocks: 0 pending els. innerHTML len=${contentEl.innerHTML.length}, class in raw HTML: ${inHtml}`);
+        if (inHtml) {
+            // The class exists in raw HTML but not as a DOM element — parser issue
+            const idx = contentEl.innerHTML.indexOf('cn-regex-html-pending');
+            console.log(`[ChatNovel] context around pending class: ...${contentEl.innerHTML.substring(Math.max(0, idx - 100), idx + 100)}...`);
+        }
+        return;
+    }
 
     console.log(`[ChatNovel] Post-processing ${pendingEls.length} HTML blocks as iframes`);
 

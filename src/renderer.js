@@ -131,13 +131,18 @@ function renderMarkdown(text) {
     // Complete HTML documents from regex scripts (choices, status panels, etc.).
     // MUST be before inline code extraction — backticks in HTML (template literals,
     // etc.) would be captured as inline code and corrupt the DOCTYPE content.
+    let doctypeCount = 0;
     text = text.replace(/<!DOCTYPE\s+html[^>]*>[\s\S]*?<\/html>/gi, (match) => {
+        doctypeCount++;
         const idx = protectedBlocks.length;
         protectedBlocks.push(
             `<div class="cn-regex-html-pending" style="display:none">${escapeHtml(match)}</div>`
         );
         return `\x00HTMLBLOCK${idx}\x00`;
     });
+    if (doctypeCount > 0) {
+        console.log(`[ChatNovel] renderMarkdown: extracted ${doctypeCount} DOCTYPEs into pending divs`);
+    }
 
     // Protect inline code (AFTER DOCTYPE extraction to avoid corrupting HTML)
     const inlineCodes = [];
@@ -291,18 +296,23 @@ function renderMarkdown(text) {
 
     text = result.join('\n');
 
-    // Restore code blocks
+    // Restore code blocks (use function callback to avoid $ special-char interpretation)
     codeBlocks.forEach((block, i) => {
-        text = text.replace(`\x00CODEBLOCK${i}\x00`, block);
+        text = text.replace(`\x00CODEBLOCK${i}\x00`, () => block);
     });
     inlineCodes.forEach((code, i) => {
-        text = text.replace(`\x00INLINECODE${i}\x00`, code);
+        text = text.replace(`\x00INLINECODE${i}\x00`, () => code);
     });
 
     // Restore protected HTML blocks (must be last — after all other restore steps)
     protectedBlocks.forEach((block, i) => {
-        text = text.replace(`\x00HTMLBLOCK${i}\x00`, block);
+        text = text.replace(`\x00HTMLBLOCK${i}\x00`, () => block);
     });
+
+    const hasPending = text.includes('cn-regex-html-pending');
+    if (doctypeCount > 0) {
+        console.log(`[ChatNovel] renderMarkdown: output has cn-regex-html-pending: ${hasPending}, output length: ${text.length}`);
+    }
 
     return text;
 }
@@ -451,10 +461,14 @@ export function renderMessage(message, options) {
     // 4. Choices processing (fallback for patterns not caught by regex)
     text = processChoices(text);
 
-    // 5. Restore DOCTYPE blocks
+    // 5. Restore DOCTYPE blocks (function callback avoids $ special-char interpretation)
     doctypeBlocks.forEach((block, i) => {
-        text = text.replace(`\x00DOCTYPEHOLD${i}\x00`, block);
+        text = text.replace(`\x00DOCTYPEHOLD${i}\x00`, () => block);
     });
+    if (doctypeBlocks.length > 0) {
+        const stillHasDOCTYPE = /<!DOCTYPE/i.test(text);
+        console.log(`[ChatNovel] msg ${message._index}: restored ${doctypeBlocks.length} DOCTYPE blocks, DOCTYPE still present: ${stillHasDOCTYPE}`);
+    }
 
     // 6. Markdown → HTML
     text = renderMarkdown(text);
