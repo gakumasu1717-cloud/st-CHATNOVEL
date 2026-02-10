@@ -317,46 +317,84 @@ function renderAllChapters(contentEl, settings, userName, characterName) {
     // Set up image click delegation for lightbox
     setupImageClickDelegation(contentEl);
 
-    // Convert pending HTML blocks (from regex scripts) into live iframes
+    // Convert pending HTML blocks (from regex scripts) into inline content
     postProcessHtmlBlocks(contentEl);
 }
 
 /**
- * Convert hidden HTML block placeholders into live iframes.
- * Regex scripts output complete HTML documents (<!DOCTYPE html>...)</n * which are stored as escaped text content during markdown rendering.
- * This function creates iframes and writes the HTML directly via document.write(),
- * avoiding srcdoc attribute escaping issues.
+ * Convert hidden HTML block placeholders into inline content.
+ * Regex scripts output complete HTML documents (<!DOCTYPE html>...).
+ * This function extracts body content, styles, and scripts from the doc
+ * and renders them inline — no iframes, no collapsing.
  * @param {HTMLElement} contentEl
  */
 function postProcessHtmlBlocks(contentEl) {
     const pendingEls = contentEl.querySelectorAll('.cn-regex-html-pending');
     if (pendingEls.length === 0) return;
 
-    console.log(`[ChatNovel] Post-processing ${pendingEls.length} HTML blocks into iframes`);
+    console.log(`[ChatNovel] Post-processing ${pendingEls.length} HTML blocks inline`);
 
     pendingEls.forEach((el) => {
         const html = el.textContent; // textContent auto-decodes HTML entities
-        const iframe = document.createElement('iframe');
-        iframe.className = 'cn-regex-iframe';
-        el.replaceWith(iframe);
 
-        // Write HTML directly — no attribute escaping needed
-        const doc = iframe.contentDocument || iframe.contentWindow.document;
-        doc.open();
-        doc.write(html);
-        doc.close();
+        // Extract <style> blocks from the full document
+        const styles = [];
+        html.replace(/<style\b[^>]*>([\s\S]*?)<\/style>/gi, (_, css) => {
+            styles.push(css);
+        });
 
-        // Auto-resize iframe to content height (multiple attempts for async rendering)
-        const resize = () => {
+        // Extract body content (or strip doc wrappers)
+        let bodyContent;
+        const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+        if (bodyMatch) {
+            bodyContent = bodyMatch[1];
+        } else {
+            // Strip document wrapper tags manually
+            bodyContent = html
+                .replace(/<!DOCTYPE[^>]*>/gi, '')
+                .replace(/<\/?html[^>]*>/gi, '')
+                .replace(/<head>[\s\S]*?<\/head>/gi, '')
+                .replace(/<\/?body[^>]*>/gi, '');
+        }
+
+        // Extract <script> blocks from body content
+        const scriptContents = [];
+        bodyContent = bodyContent.replace(/<script\b[^>]*>([\s\S]*?)<\/script>/gi, (_, js) => {
+            scriptContents.push(js);
+            return '';
+        });
+
+        // Create container
+        const container = document.createElement('div');
+        container.className = 'cn-regex-content';
+
+        // Add styles
+        if (styles.length > 0) {
+            const styleEl = document.createElement('style');
+            styleEl.textContent = styles.join('\n');
+            container.appendChild(styleEl);
+        }
+
+        // Add body content
+        const bodyDiv = document.createElement('div');
+        bodyDiv.innerHTML = bodyContent.trim();
+        while (bodyDiv.firstChild) {
+            container.appendChild(bodyDiv.firstChild);
+        }
+
+        // Replace hidden div with visible container
+        el.replaceWith(container);
+
+        // Execute scripts (insertAdjacentHTML doesn't execute <script>)
+        for (const js of scriptContents) {
             try {
-                const h = doc.documentElement.scrollHeight;
-                if (h > 0) iframe.style.height = h + 'px';
-            } catch (e) { /* cross-origin or detached */ }
-        };
-        iframe.addEventListener('load', resize);
-        setTimeout(resize, 300);
-        setTimeout(resize, 1000);
-        setTimeout(resize, 3000);
+                const scriptEl = document.createElement('script');
+                scriptEl.textContent = js;
+                container.appendChild(scriptEl);
+            } catch (e) {
+                console.warn('[ChatNovel] Script execution error:', e);
+            }
+        }
     });
 }
 

@@ -1038,17 +1038,12 @@ body.cn-reader-open {
     display: none;
 }
 
-/* Regex-output HTML documents rendered in sandboxed iframes */
-.cn-regex-iframe {
+/* Regex-output HTML content rendered inline */
+.cn-regex-content {
     width: 100%;
-    min-height: 60px;
-    max-height: 800px;
-    border: none;
-    border-radius: 8px;
     margin: 12px 0;
-    display: block;
-    background: transparent;
-    overflow: hidden;
+    border-radius: 8px;
+    overflow: visible;
 }
 
 /* Blockquote styling */
