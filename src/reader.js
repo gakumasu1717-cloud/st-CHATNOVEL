@@ -70,6 +70,17 @@ export function openReader() {
 
         const settings = getSettings();
 
+        // ★ DOM 파싱을 #chat ID 스왑 전에 실행
+        // 이 시점에서 원본 #chat이 아직 살아있으므로 .mes 요소를 찾을 수 있음
+        const parsed = parseChatFromDOM();
+        state.metadata = parsed.metadata;
+
+        state.chapters = chapterize(parsed.messages, {
+            mode: settings.chapterMode,
+            messagesPerChapter: settings.messagesPerChapter,
+            timeGapHours: settings.timeGapHours,
+        });
+
         // Show overlay shell immediately (fast — no parsing/rendering)
         createOverlayShell(settings, userName, characterName);
         state.isOpen = true;
@@ -83,10 +94,10 @@ export function openReader() {
             state._origChatEl = origChat;
         }
 
-        // Defer heavy work to next frame to avoid blocking the click handler
+        // Defer rendering to next frame (이미 파싱된 데이터 사용 — DOM 쿼리 안 함)
         requestAnimationFrame(() => {
             try {
-                loadContent(settings, userName, characterName);
+                loadContentFromParsed(settings, userName, characterName);
             } catch (e) {
                 console.error('[ChatNovel] Failed to render:', e);
                 const contentEl = state.overlay?.querySelector('.cn-content');
@@ -243,27 +254,17 @@ function createOverlayShell(settings, userName, characterName) {
 }
 
 /**
- * Parse chat, chapterize, and render into the already-visible overlay.
- * Called in a deferred frame after the shell is shown.
+ * Render already-parsed content into the overlay.
+ * parseChatFromDOM() and chapterize() already done in openReader().
  * @param {Object} settings
  * @param {string} userName
  * @param {string} characterName
  */
-function loadContent(settings, userName, characterName) {
-    // Heavy: parse DOM + chapterize
-    const parsed = parseChatFromDOM();
-    state.metadata = parsed.metadata;
-
+function loadContentFromParsed(settings, userName, characterName) {
     // Update header title with parsed metadata
     const title = state.metadata?.character_name || characterName;
     const titleEl = state.overlay.querySelector('.cn-header-title');
     if (titleEl) titleEl.textContent = `\ud83d\udcd6 Chat Novel \u2014 ${title}`;
-
-    state.chapters = chapterize(parsed.messages, {
-        mode: settings.chapterMode,
-        messagesPerChapter: settings.messagesPerChapter,
-        timeGapHours: settings.timeGapHours,
-    });
 
     // Render content
     const contentEl = state.overlay.querySelector('.cn-content');
@@ -288,7 +289,7 @@ function loadContent(settings, userName, characterName) {
         }, 100);
     }
 
-    console.log(`[ChatNovel] Opened reader: ${parsed.messages.length} messages, ${state.chapters.length} chapters`);
+    console.log(`[ChatNovel] Opened reader: ${state.chapters.reduce((a, c) => a + c.messages.length, 0)} messages, ${state.chapters.length} chapters`);
 }
 
 /**
@@ -574,8 +575,10 @@ function showSettingsPanel(userName, characterName) {
 function reRender(userName, characterName) {
     const settings = getSettings();
 
-    const parsed = parseChatFromDOM();
-    state.chapters = chapterize(parsed.messages, {
+    // DOM 재파싱 안 함 — 기존 파싱 데이터에서 메시지만 추출하여 재분할
+    const allMessages = state.chapters.flatMap(ch => ch.messages);
+
+    state.chapters = chapterize(allMessages, {
         mode: settings.chapterMode,
         messagesPerChapter: settings.messagesPerChapter,
         timeGapHours: settings.timeGapHours,
