@@ -31,6 +31,54 @@ function substituteCharMacro(text, characterName) {
     return text.replace(/\{\{char\}\}/gi, characterName);
 }
 
+// ===== Previous Info Block Removal =====
+
+/**
+ * Strip <details> blocks whose summary contains "이전 정보".
+ * Uses depth counting (not regex) to properly handle nested <details>.
+ * Regex scripts wrap OLD state in: <details><summary>이전 정보</summary>```OLD```</details>
+ * The OLD content may itself contain nested <details> (장비, 아이템, etc.)
+ * so simple regex matching would break.
+ * @param {string} text
+ * @returns {string}
+ */
+function stripPreviousInfoBlocks(text) {
+    if (!text) return text;
+
+    const summaryRe = /<details[^>]*>\s*<summary[^>]*>[^<]*이전\s*정보[^<]*<\/summary>/i;
+    let match;
+
+    while ((match = summaryRe.exec(text)) !== null) {
+        let depth = 1;
+        let pos = match.index + match[0].length;
+
+        while (depth > 0 && pos < text.length) {
+            const openIdx = text.indexOf('<details', pos);
+            const closeIdx = text.indexOf('</details', pos);
+
+            if (closeIdx === -1) break; // No more closing tags — bail out
+
+            if (openIdx !== -1 && openIdx < closeIdx) {
+                // Found a nested <details> before the next </details>
+                depth++;
+                pos = openIdx + 8;
+            } else {
+                // Found a </details>
+                depth--;
+                if (depth === 0) {
+                    // This is the matching </details> for our block
+                    const endIdx = text.indexOf('>', closeIdx) + 1;
+                    text = text.substring(0, match.index) + text.substring(endIdx);
+                    break;
+                }
+                pos = closeIdx + 10;
+            }
+        }
+    }
+
+    return text;
+}
+
 // ===== Choices Processing =====
 
 /**
@@ -331,10 +379,12 @@ function renderExtraImages(message) {
     if (!message.extra) return '';
 
     const images = [];
+    // Use a raw copy to avoid ST's Proxy deprecation warnings
+    const extra = Object.assign({}, message.extra);
 
     // Current format: extra.media[] array of MediaAttachment objects
-    if (Array.isArray(message.extra.media)) {
-        for (const media of message.extra.media) {
+    if (Array.isArray(extra.media)) {
+        for (const media of extra.media) {
             if (media && media.url && (!media.type || media.type === 'image')) {
                 images.push({ src: media.url, alt: media.title || '' });
             }
@@ -342,18 +392,17 @@ function renderExtraImages(message) {
     }
 
     // Deprecated: extra.image (single image URL)
-    // Access via hasOwnProperty to avoid ST's Proxy getter warning
-    if (images.length === 0 && Object.prototype.hasOwnProperty.call(message.extra, 'image') && message.extra.image) {
-        images.push({ src: message.extra.image, alt: message.extra.title || '' });
+    if (images.length === 0 && extra.image) {
+        images.push({ src: extra.image, alt: extra.title || '' });
     }
 
     // Deprecated: extra.image_swipes (multiple image URLs)
-    if (images.length === 0 && Array.isArray(message.extra.image_swipes)) {
+    if (images.length === 0 && Array.isArray(extra.image_swipes)) {
         // Use media_index or default to last swipe (ST default)
-        const idx = message.extra.media_index ?? (message.extra.image_swipes.length - 1);
-        const url = message.extra.image_swipes[idx] || message.extra.image_swipes[message.extra.image_swipes.length - 1];
+        const idx = extra.media_index ?? (extra.image_swipes.length - 1);
+        const url = extra.image_swipes[idx] || extra.image_swipes[extra.image_swipes.length - 1];
         if (url) {
-            images.push({ src: url, alt: message.extra.title || '' });
+            images.push({ src: url, alt: extra.title || '' });
         }
     }
 
@@ -393,6 +442,12 @@ export function renderMessage(message, options) {
             userName: options.userName,
         });
     }
+
+    // 2.5. Strip "이전 정보" details blocks BEFORE any HTML processing.
+    // Regex scripts wrap OLD state in <details><summary>이전 정보</summary>```OLD DOCTYPE```</details>.
+    // Must be removed before DOCTYPE extraction to avoid creating iframes from OLD (empty) data.
+    // Uses depth counting to safely handle nested <details> elements.
+    text = stripPreviousInfoBlocks(text);
 
     // 3. Protect DOCTYPE blocks from choices processing.
     // Regex scripts have their own choices UI (선택/대필 buttons) inside DOCTYPE docs.
