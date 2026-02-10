@@ -51,6 +51,12 @@ export function regexFromString(regexStr, script = null) {
 
 /**
  * Apply a single regex script to a string.
+ * Reproduces ST's runRegexScript() behavior:
+ *   1. {{match}} → $0 (pre-processing)
+ *   2. function callback for replace() — no native $& interpretation
+ *   3. Manual $N / $<name> capture group resolution inside callback
+ *   4. trimStrings applied to each resolved group
+ *   5. Macro substitution ({{char}}, {{user}}, {{charkey}}) after group resolution
  * @param {Object} script - The regex script object
  * @param {string} text - The input text
  * @param {Object} [options]
@@ -66,34 +72,52 @@ export function applyRegexScript(script, text, options = {}) {
         const findRegex = regexFromString(script.findRegex, script);
         if (!findRegex) return text;
 
-        let replaceStr = script.replaceString || '';
+        // Step 1: {{match}} → $0 (same as ST)
+        let replaceTemplate = (script.replaceString || '').replace(/\{\{match\}\}/gi, '$0');
 
-        // Handle {{match}} macro — $& is the correct JS replacement for full match
-        replaceStr = replaceStr.replace(/\{\{match\}\}/gi, '$&');
+        const trimStrings = (script.trimStrings && Array.isArray(script.trimStrings))
+            ? script.trimStrings.filter(Boolean)
+            : [];
 
-        // Handle {{charkey}} — ST character folder key (avatar-based)
-        if (options.characterKey) {
-            replaceStr = replaceStr.replace(/\{\{charkey\}\}/gi, options.characterKey);
-        } else if (options.characterName) {
-            replaceStr = replaceStr.replace(/\{\{charkey\}\}/gi, options.characterName);
-        }
+        // Step 2: function callback — avoids native $& / $1 interpretation
+        let result = text.replace(findRegex, function () {
+            const args = [...arguments];
 
-        if (options.characterName) {
-            replaceStr = replaceStr.replace(/\{\{char\}\}/gi, options.characterName);
-        }
+            // Step 3: Manually resolve $N and $<name> capture groups
+            let output = replaceTemplate.replace(/\$(\d+)|\$<([^>]+)>/g, (_, num, groupName) => {
+                let groupMatch;
+                if (num !== undefined) {
+                    groupMatch = args[Number(num)];
+                } else if (groupName) {
+                    // Named groups are in the last argument (object)
+                    const groups = args[args.length - 1];
+                    groupMatch = (groups && typeof groups === 'object') ? groups[groupName] : undefined;
+                }
 
-        if (options.userName) {
-            replaceStr = replaceStr.replace(/\{\{user\}\}/gi, options.userName);
-        }
+                if (!groupMatch) return '';
 
-        let result = text.replace(findRegex, replaceStr);
+                // Apply trimStrings to the matched group
+                for (const trimStr of trimStrings) {
+                    groupMatch = groupMatch.replaceAll(trimStr, '');
+                }
+                return groupMatch;
+            });
 
-        // Handle trimStrings — array of strings to remove after replacement
-        if (script.trimStrings && Array.isArray(script.trimStrings)) {
-            for (const trimStr of script.trimStrings) {
-                if (trimStr) result = result.replaceAll(trimStr, '');
+            // Step 4: Macro substitution
+            if (options.characterKey) {
+                output = output.replace(/\{\{charkey\}\}/gi, options.characterKey);
+            } else if (options.characterName) {
+                output = output.replace(/\{\{charkey\}\}/gi, options.characterName);
             }
-        }
+            if (options.characterName) {
+                output = output.replace(/\{\{char\}\}/gi, options.characterName);
+            }
+            if (options.userName) {
+                output = output.replace(/\{\{user\}\}/gi, options.userName);
+            }
+
+            return output;
+        });
 
         return result;
     } catch (e) {
