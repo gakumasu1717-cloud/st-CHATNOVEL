@@ -388,6 +388,19 @@ export function renderMessage(message, options) {
             characterKey: options.characterKey,
             userName: options.userName,
         });
+
+        // Debug: log regex output to diagnose rendering issues
+        if (text !== message.mes && text.length > message.mes.length + 50) {
+            const hasDOCTYPE = /<!DOCTYPE/i.test(text);
+            const hasHtmlTag = /<html/i.test(text);
+            const hasStyle = /<style/i.test(text);
+            const hasScript = /<script/i.test(text);
+            const hasDetails = /<details/i.test(text);
+            console.log(`[ChatNovel] Regex output (msg ${message._index}): len=${text.length}, ` +
+                `DOCTYPE=${hasDOCTYPE}, <html>=${hasHtmlTag}, <style>=${hasStyle}, ` +
+                `<script>=${hasScript}, <details>=${hasDetails}, ` +
+                `first200=${JSON.stringify(text.substring(0, 200))}`);
+        }
     }
 
     // 3. Protect DOCTYPE blocks from choices processing.
