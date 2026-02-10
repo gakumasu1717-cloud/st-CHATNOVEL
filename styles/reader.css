@@ -521,6 +521,14 @@ body.cn-reader-open {
     font-size: 2em;
 }
 
+/* Extra images (SD, auto-pic, pasted, etc. from message.extra) */
+.cn-extra-images {
+    margin-top: 16px;
+}
+.cn-extra-images .cn-image-container {
+    margin: 12px 0;
+}
+
 /* ===== Lightbox ===== */
 .cn-lightbox {
     position: fixed;

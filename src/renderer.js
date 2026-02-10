@@ -5,6 +5,7 @@
  */
 
 import { escapeHtml } from './utils.js';
+import { createImageHtml } from './imageHandler.js';
 
 // ===== Macro Substitution =====
 
@@ -313,6 +314,52 @@ function styleDialogue(html, enabled) {
     return html;
 }
 
+// ===== Extra Image Rendering =====
+
+/**
+ * Render images stored in message.extra (ST image system).
+ * ST stores images separately from mes text — in extra.media[] (current)
+ * or extra.image (deprecated). These include SD-generated, pasted,
+ * auto-pic, and other extension images.
+ * @param {Object} message - Parsed message object
+ * @returns {string} HTML string for images, or empty string
+ */
+function renderExtraImages(message) {
+    if (!message.extra) return '';
+
+    const images = [];
+
+    // Current format: extra.media[] array of MediaAttachment objects
+    if (Array.isArray(message.extra.media)) {
+        for (const media of message.extra.media) {
+            if (media && media.url && (!media.type || media.type === 'image')) {
+                images.push({ src: media.url, alt: media.title || '' });
+            }
+        }
+    }
+
+    // Deprecated: extra.image (single image URL)
+    if (images.length === 0 && message.extra.image) {
+        images.push({ src: message.extra.image, alt: message.extra.title || '' });
+    }
+
+    // Deprecated: extra.image_swipes (multiple image URLs)
+    if (images.length === 0 && Array.isArray(message.extra.image_swipes)) {
+        // Use media_index or default to last swipe (ST default)
+        const idx = message.extra.media_index ?? (message.extra.image_swipes.length - 1);
+        const url = message.extra.image_swipes[idx] || message.extra.image_swipes[message.extra.image_swipes.length - 1];
+        if (url) {
+            images.push({ src: url, alt: message.extra.title || '' });
+        }
+    }
+
+    if (images.length === 0) return '';
+
+    return '<div class="cn-extra-images">' +
+        images.map(img => createImageHtml(img.src, img.alt)).join('') +
+        '</div>';
+}
+
 // ===== Public API =====
 
 /**
@@ -351,6 +398,17 @@ export function renderMessage(message, options) {
 
     // 5. Dialogue styling
     text = styleDialogue(text, options.dialogueEnabled);
+
+    // 6. Extra images (SD-generated, pasted, auto-pic, etc.)
+    const extraImgHtml = renderExtraImages(message);
+    if (extraImgHtml) {
+        if (message.extra?.inline_image) {
+            // inline_image = image IS the message (text hidden in ST)
+            text = extraImgHtml;
+        } else {
+            text += extraImgHtml;
+        }
+    }
 
     return text;
 }
