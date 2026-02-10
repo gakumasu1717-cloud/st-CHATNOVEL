@@ -82,9 +82,28 @@ function renderMarkdown(text) {
         return `\x00HTMLBLOCK${idx}\x00`;
     }
 
+    // *** Code fences MUST be extracted FIRST ***
+    // Regex scripts wrap OLD state in code fences (```) inside <details>이전 정보.
+    // If we extract DOCTYPEs first, we'd capture OLD DOCTYPEs inside code fences
+    // and turn them into broken iframes with no data.
+    const codeBlocks = [];
+    text = text.replace(/```(\w*)\n?([\s\S]*?)```/g, (match, lang, code) => {
+        const idx = codeBlocks.length;
+        codeBlocks.push(`<pre class="cn-code-block"><code>${escapeHtml(code.trim())}</code></pre>`);
+        return `\x00CODEBLOCK${idx}\x00`;
+    });
+
+    // Protect inline code
+    const inlineCodes = [];
+    text = text.replace(/`([^`]+)`/g, (match, code) => {
+        const idx = inlineCodes.length;
+        inlineCodes.push(`<code class="cn-inline-code">${escapeHtml(code)}</code>`);
+        return `\x00INLINECODE${idx}\x00`;
+    });
+
     // Complete HTML documents from regex scripts (choices, status panels, etc.).
-    // Store as escaped text in hidden divs — post-processed into iframes by reader.js
-    // to avoid srcdoc attribute escaping issues that corrupt CSS/JS content.
+    // Now safe — DOCTYPEs inside code fences are already extracted as code blocks.
+    // Only REAL (current state) DOCTYPEs remain.
     text = text.replace(/<!DOCTYPE\s+html[^>]*>[\s\S]*?<\/html>/gi, (match) => {
         const idx = protectedBlocks.length;
         protectedBlocks.push(
@@ -104,22 +123,6 @@ function renderMarkdown(text) {
 
     // Protect <table>...</table> blocks
     text = text.replace(/<table\b[^>]*>[\s\S]*?<\/table>/gi, protectBlock);
-
-    // Protect code blocks
-    const codeBlocks = [];
-    text = text.replace(/```(\w*)\n?([\s\S]*?)```/g, (match, lang, code) => {
-        const idx = codeBlocks.length;
-        codeBlocks.push(`<pre class="cn-code-block"><code>${escapeHtml(code.trim())}</code></pre>`);
-        return `\x00CODEBLOCK${idx}\x00`;
-    });
-
-    // Protect inline code
-    const inlineCodes = [];
-    text = text.replace(/`([^`]+)`/g, (match, code) => {
-        const idx = inlineCodes.length;
-        inlineCodes.push(`<code class="cn-inline-code">${escapeHtml(code)}</code>`);
-        return `\x00INLINECODE${idx}\x00`;
-    });
 
     // === Line-by-line processing with HTML block depth tracking ===
     // Block-level HTML elements that can span multiple lines.
@@ -339,7 +342,8 @@ function renderExtraImages(message) {
     }
 
     // Deprecated: extra.image (single image URL)
-    if (images.length === 0 && message.extra.image) {
+    // Access via hasOwnProperty to avoid ST's Proxy getter warning
+    if (images.length === 0 && Object.prototype.hasOwnProperty.call(message.extra, 'image') && message.extra.image) {
         images.push({ src: message.extra.image, alt: message.extra.title || '' });
     }
 
@@ -388,19 +392,6 @@ export function renderMessage(message, options) {
             characterKey: options.characterKey,
             userName: options.userName,
         });
-
-        // Debug: log regex output to diagnose rendering issues
-        if (text !== message.mes && text.length > message.mes.length + 50) {
-            const hasDOCTYPE = /<!DOCTYPE/i.test(text);
-            const hasHtmlTag = /<html/i.test(text);
-            const hasStyle = /<style/i.test(text);
-            const hasScript = /<script/i.test(text);
-            const hasDetails = /<details/i.test(text);
-            console.log(`[ChatNovel] Regex output (msg ${message._index}): len=${text.length}, ` +
-                `DOCTYPE=${hasDOCTYPE}, <html>=${hasHtmlTag}, <style>=${hasStyle}, ` +
-                `<script>=${hasScript}, <details>=${hasDetails}, ` +
-                `first200=${JSON.stringify(text.substring(0, 200))}`);
-        }
     }
 
     // 3. Protect DOCTYPE blocks from choices processing.
