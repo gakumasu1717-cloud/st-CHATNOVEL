@@ -317,84 +317,61 @@ function renderAllChapters(contentEl, settings, userName, characterName) {
     // Set up image click delegation for lightbox
     setupImageClickDelegation(contentEl);
 
-    // Convert pending HTML blocks (from regex scripts) into inline content
+    // Render regex HTML blocks as visible iframes
     postProcessHtmlBlocks(contentEl);
 }
 
 /**
- * Convert hidden HTML block placeholders into inline content.
+ * Convert hidden HTML block placeholders into visible iframes.
  * Regex scripts output complete HTML documents (<!DOCTYPE html>...).
- * This function extracts body content, styles, and scripts from the doc
- * and renders them inline — no iframes, no collapsing.
+ * Use iframes for CSS/JS isolation, rendered directly (no collapsing).
  * @param {HTMLElement} contentEl
  */
 function postProcessHtmlBlocks(contentEl) {
     const pendingEls = contentEl.querySelectorAll('.cn-regex-html-pending');
     if (pendingEls.length === 0) return;
 
-    console.log(`[ChatNovel] Post-processing ${pendingEls.length} HTML blocks inline`);
+    console.log(`[ChatNovel] Post-processing ${pendingEls.length} HTML blocks as iframes`);
 
     pendingEls.forEach((el) => {
         const html = el.textContent; // textContent auto-decodes HTML entities
 
-        // Extract <style> blocks from the full document
-        const styles = [];
-        html.replace(/<style\b[^>]*>([\s\S]*?)<\/style>/gi, (_, css) => {
-            styles.push(css);
-        });
+        const iframe = document.createElement('iframe');
+        iframe.className = 'cn-regex-iframe';
+        iframe.setAttribute('scrolling', 'no');
+        iframe.setAttribute('frameborder', '0');
+        el.replaceWith(iframe);
 
-        // Extract body content (or strip doc wrappers)
-        let bodyContent;
-        const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-        if (bodyMatch) {
-            bodyContent = bodyMatch[1];
-        } else {
-            // Strip document wrapper tags manually
-            bodyContent = html
-                .replace(/<!DOCTYPE[^>]*>/gi, '')
-                .replace(/<\/?html[^>]*>/gi, '')
-                .replace(/<head>[\s\S]*?<\/head>/gi, '')
-                .replace(/<\/?body[^>]*>/gi, '');
-        }
+        // Write HTML directly via document.write — no srcdoc escaping needed
+        const doc = iframe.contentDocument || iframe.contentWindow.document;
+        doc.open();
+        doc.write(html);
+        doc.close();
 
-        // Extract <script> blocks from body content
-        const scriptContents = [];
-        bodyContent = bodyContent.replace(/<script\b[^>]*>([\s\S]*?)<\/script>/gi, (_, js) => {
-            scriptContents.push(js);
-            return '';
-        });
-
-        // Create container
-        const container = document.createElement('div');
-        container.className = 'cn-regex-content';
-
-        // Add styles
-        if (styles.length > 0) {
-            const styleEl = document.createElement('style');
-            styleEl.textContent = styles.join('\n');
-            container.appendChild(styleEl);
-        }
-
-        // Add body content
-        const bodyDiv = document.createElement('div');
-        bodyDiv.innerHTML = bodyContent.trim();
-        while (bodyDiv.firstChild) {
-            container.appendChild(bodyDiv.firstChild);
-        }
-
-        // Replace hidden div with visible container
-        el.replaceWith(container);
-
-        // Execute scripts (insertAdjacentHTML doesn't execute <script>)
-        for (const js of scriptContents) {
+        // Auto-resize iframe to fit content (multiple attempts for async JS rendering)
+        const resize = () => {
             try {
-                const scriptEl = document.createElement('script');
-                scriptEl.textContent = js;
-                container.appendChild(scriptEl);
-            } catch (e) {
-                console.warn('[ChatNovel] Script execution error:', e);
-            }
-        }
+                const h = doc.documentElement ? doc.documentElement.scrollHeight : 0;
+                if (h > 0) iframe.style.height = h + 'px';
+            } catch (e) { /* safety */ }
+        };
+        // Resize on load event
+        iframe.addEventListener('load', resize);
+        // Retry resizes for content rendered by scripts inside the iframe
+        setTimeout(resize, 100);
+        setTimeout(resize, 500);
+        setTimeout(resize, 1500);
+        setTimeout(resize, 3000);
+
+        // MutationObserver for dynamic content changes inside iframe
+        try {
+            const observer = new MutationObserver(resize);
+            observer.observe(doc.body || doc.documentElement, {
+                childList: true, subtree: true, attributes: true,
+            });
+            // Clean up observer after 10 seconds (content should be stable by then)
+            setTimeout(() => observer.disconnect(), 10000);
+        } catch (e) { /* safety */ }
     });
 }
 
