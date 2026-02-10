@@ -70,8 +70,10 @@ function unwrapPreviousInfoBlocks(text) {
 
 /**
  * Find complete HTML documents (<!DOCTYPE html>...) and replace them with
- * placeholder divs. The actual iframe HTML is stored in an array and restored
- * AFTER markdown processing to avoid the markdown renderer escaping srcdoc content.
+ * text token placeholders. The actual iframe HTML is stored in an array and
+ * restored AFTER markdown processing. Text tokens (%%%CN_IFRAME_N%%%) are used
+ * instead of HTML tags because the markdown renderer aggressively wraps/escapes
+ * HTML tags into code blocks.
  *
  * @param {string} text - Text with potential HTML documents
  * @returns {{ text: string, iframePlaceholders: string[] }}
@@ -90,14 +92,15 @@ function convertHtmlDocsToIframes(text) {
         const iframe = `<iframe class="cn-regex-iframe" srcdoc="${escaped}" sandbox="allow-scripts allow-same-origin" frameborder="0" scrolling="no"></iframe>`;
         const index = iframePlaceholders.length;
         iframePlaceholders.push(iframe);
-        return `<div data-cn-iframe-placeholder="${index}"></div>`;
+        return `\n%%%CN_IFRAME_${index}%%%\n`;
     });
 
     return { text: processed, iframePlaceholders };
 }
 
 /**
- * Restore iframe placeholders with actual iframe HTML after markdown processing.
+ * Restore text token placeholders with actual iframe HTML after markdown processing.
+ * Tokens may be wrapped in <p> tags by the markdown renderer — the regex handles that.
  * @param {string} html - Markdown-processed HTML
  * @param {string[]} iframePlaceholders - Array of iframe HTML strings
  * @returns {string}
@@ -105,7 +108,7 @@ function convertHtmlDocsToIframes(text) {
 function restoreIframePlaceholders(html, iframePlaceholders) {
     if (!iframePlaceholders || iframePlaceholders.length === 0) return html;
     return html.replace(
-        /<div data-cn-iframe-placeholder="(\d+)"><\/div>/g,
+        /(?:<p[^>]*>)?\s*%%%CN_IFRAME_(\d+)%%%\s*(?:<\/p>)?/g,
         (match, index) => iframePlaceholders[parseInt(index, 10)] || match
     );
 }
