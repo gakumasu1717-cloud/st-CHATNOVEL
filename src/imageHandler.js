@@ -48,6 +48,7 @@ function resolveImagePath(filename, characterName) {
 /**
  * Create HTML for an image element.
  * No inline onclick — uses event delegation via setupImageClickDelegation().
+ * IMPORTANT: Must be single-line to survive markdown renderer's line-by-line processing.
  * @param {string} src - Image source URL
  * @param {string} alt - Alt text
  * @returns {string} HTML string
@@ -56,16 +57,7 @@ export function createImageHtml(src, alt) {
     const escapedSrc = escapeAttr(src);
     const escapedAlt = escapeAttr(alt);
 
-    return `<div class="cn-image-container">
-        <img class="cn-image"
-             src="${escapedSrc}"
-             alt="${escapedAlt}"
-             title="${escapedAlt}"
-             loading="lazy"
-             data-cn-processed="true"
-             onerror="this.onerror=null; this.parentElement.innerHTML='<div class=\\'cn-image-fallback\\'><span class=\\'cn-image-fallback-icon\\'>🖼️</span><span>${escapedAlt}</span></div>'"
-        />
-    </div>`;
+    return `<div class="cn-image-container"><img class="cn-image" src="${escapedSrc}" alt="${escapedAlt}" title="${escapedAlt}" loading="lazy" data-cn-processed="true" onerror="this.onerror=null; this.parentElement.innerHTML='&lt;div class=cn-image-fallback&gt;&lt;span class=cn-image-fallback-icon&gt;🖼️&lt;/span&gt;&lt;span&gt;${escapedAlt}&lt;/span&gt;&lt;/div&gt;'" /></div>`;
 }
 
 /**
