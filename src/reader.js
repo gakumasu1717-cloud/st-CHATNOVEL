@@ -366,9 +366,12 @@ function updateProgress(contentEl) {
 function scrollToChapter(chapterIdx) {
     if (!state.overlay) return;
 
+    const contentEl = state.overlay.querySelector('.cn-content');
     const chapterEl = state.overlay.querySelector(`#cn-chapter-${chapterIdx}`);
-    if (chapterEl) {
-        chapterEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (chapterEl && contentEl) {
+        // Use manual scrollTop to avoid scrollIntoView moving the outer page on mobile
+        const chapterTop = chapterEl.offsetTop - contentEl.offsetTop;
+        contentEl.scrollTo({ top: chapterTop, behavior: 'smooth' });
     }
 }
 

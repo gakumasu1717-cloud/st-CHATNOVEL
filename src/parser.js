@@ -34,47 +34,81 @@
  */
 
 /**
- * Extract visible HTML from a message element, stripping elements hidden by CSS.
- * ST hides custom elements (e.g. <status>, extension UI) via `display: none`.
- * Without stripping, these appear as raw text in the reader.
- * @param {HTMLElement} textEl - The original .mes_text element (in DOM, with computed styles)
+ * Standard HTML tag allowlist.
+ * Any element NOT in this set will be stripped from rendered HTML.
+ */
+const STANDARD_HTML_TAGS = new Set([
+    'a','abbr','address','area','article','aside','audio','b','bdi','bdo','blockquote',
+    'br','button','canvas','caption','cite','code','col','colgroup','data','datalist',
+    'dd','del','details','dfn','dialog','div','dl','dt','em','embed','fieldset',
+    'figcaption','figure','footer','form','h1','h2','h3','h4','h5','h6','header',
+    'hgroup','hr','i','iframe','img','input','ins','kbd','label','legend','li','link',
+    'main','map','mark','menu','meter','nav','ol','optgroup','option','output',
+    'p','picture','pre','progress','q','rp','rt','ruby','s','samp','section',
+    'select','small','source','span','strong','sub','summary','sup','table','tbody',
+    'td','template','textarea','tfoot','th','thead','time','tr','track','u','ul',
+    'var','video','wbr',
+    // SVG
+    'svg','g','path','circle','rect','line','polyline','polygon','text','tspan',
+    'defs','use','symbol','clippath','mask','pattern','lineargradient',
+    'radialgradient','stop','filter','image','foreignobject',
+]);
+
+/**
+ * Sanitize rendered HTML by stripping non-standard elements (e.g. <status>).
+ * Uses regex to remove unknown element pairs and their content.
+ * @param {string} html - Raw innerHTML from .mes_text
+ * @returns {string} Cleaned HTML
+ */
+function sanitizeRenderedHtml(html) {
+    if (!html) return html;
+
+    let result = html;
+
+    // Pass 1: Remove matched pairs of non-standard elements with content
+    // Loop to handle nested non-standard elements
+    let prev;
+    do {
+        prev = result;
+        result = result.replace(/<([a-zA-Z][a-zA-Z0-9]*)\b[^>]*>[\s\S]*?<\/\1\s*>/g, (match, tag) => {
+            return STANDARD_HTML_TAGS.has(tag.toLowerCase()) ? match : '';
+        });
+    } while (result !== prev);
+
+    // Pass 2: Remove any remaining orphaned non-standard tags (self-closing or unclosed)
+    result = result.replace(/<\/?([a-zA-Z][a-zA-Z0-9]*)\b[^>]*\/?>/g, (match, tag) => {
+        return STANDARD_HTML_TAGS.has(tag.toLowerCase()) ? match : '';
+    });
+
+    return result.trim();
+}
+
+/**
+ * Extract clean HTML from a message element.
+ * Strips CSS-hidden elements and non-standard custom tags.
+ * @param {HTMLElement} textEl - The original .mes_text element
  * @returns {string} Cleaned innerHTML
  */
-function getVisibleHtml(textEl) {
+function getCleanHtml(textEl) {
     const clone = textEl.cloneNode(true);
-    const origAll = textEl.querySelectorAll('*');
-    const cloneAll = clone.querySelectorAll('*');
 
-    // Collect indices of hidden elements (check computed styles on originals)
-    const hiddenIndices = [];
-    const hiddenOriginals = new Set();
-
-    for (let i = 0; i < origAll.length; i++) {
-        // If an ancestor is already hidden, skip — it'll be removed with the parent
-        let ancestorHidden = false;
-        let parent = origAll[i].parentElement;
-        while (parent && parent !== textEl) {
-            if (hiddenOriginals.has(parent)) {
-                ancestorHidden = true;
-                break;
-            }
-            parent = parent.parentElement;
-        }
-        if (ancestorHidden) continue;
-
-        const cs = getComputedStyle(origAll[i]);
-        if (cs.display === 'none' || cs.visibility === 'hidden') {
-            hiddenIndices.push(i);
-            hiddenOriginals.add(origAll[i]);
+    // Remove elements hidden via CSS (display:none, visibility:hidden)
+    const allEls = [...clone.querySelectorAll('*')];
+    // We check computed styles on the ORIGINAL element's children
+    const origEls = textEl.querySelectorAll('*');
+    for (let i = allEls.length - 1; i >= 0; i--) {
+        if (i < origEls.length) {
+            try {
+                const cs = getComputedStyle(origEls[i]);
+                if (cs.display === 'none' || cs.visibility === 'hidden') {
+                    allEls[i].remove();
+                }
+            } catch { /* skip */ }
         }
     }
 
-    // Remove corresponding clone elements (reverse order to preserve indices)
-    for (let i = hiddenIndices.length - 1; i >= 0; i--) {
-        cloneAll[hiddenIndices[i]]?.remove();
-    }
-
-    return clone.innerHTML;
+    // Then strip non-standard HTML tags via regex
+    return sanitizeRenderedHtml(clone.innerHTML);
 }
 
 /**
@@ -266,7 +300,7 @@ export function parseChatFromDOM() {
         const textEl = el.querySelector('.mes_text');
 
         domMap.set(mesId, {
-            renderedHtml: textEl ? getVisibleHtml(textEl) : null,
+            renderedHtml: textEl ? getCleanHtml(textEl) : null,
             domName: nameEl?.textContent?.trim() || '',
             isUser,
             isSystem,

@@ -160,7 +160,7 @@ body.cn-reader-open {
     overflow: hidden;
 }
 
-.cn-sidebar-hidden .cn-sidebar-container {
+.cn-sidebar-container.cn-sidebar-hidden {
     width: 0;
     margin-left: -1px;
 }
@@ -873,7 +873,7 @@ body.cn-reader-open {
         width: 260px;
     }
 
-    .cn-sidebar-hidden .cn-sidebar-container {
+    .cn-sidebar-container.cn-sidebar-hidden {
         width: 0;
     }
 
