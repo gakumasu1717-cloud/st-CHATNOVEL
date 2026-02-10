@@ -65,11 +65,35 @@ function processChoices(text) {
 /**
  * Render markdown-like text to HTML.
  * Handles headings, bold, italic, code, links, lists, HR, blockquotes.
+ * Protects multi-line HTML blocks (from regex scripts) from line-based processing.
  * @param {string} text
  * @returns {string}
  */
 function renderMarkdown(text) {
     if (!text) return '';
+
+    // === Protect multi-line HTML blocks from markdown processing ===
+    const protectedBlocks = [];
+    function protectBlock(match) {
+        const idx = protectedBlocks.length;
+        protectedBlocks.push(match);
+        return `\x00HTMLBLOCK${idx}\x00`;
+    }
+
+    // Protect complete HTML documents (regex scripts often output these)
+    text = text.replace(/<!DOCTYPE\s+html[^>]*>[\s\S]*?<\/html>/gi, protectBlock);
+
+    // Protect <style>...</style> blocks
+    text = text.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, protectBlock);
+
+    // Protect <script>...</script> blocks
+    text = text.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, protectBlock);
+
+    // Protect <svg>...</svg> blocks
+    text = text.replace(/<svg\b[^>]*>[\s\S]*?<\/svg>/gi, protectBlock);
+
+    // Protect <table>...</table> blocks
+    text = text.replace(/<table\b[^>]*>[\s\S]*?<\/table>/gi, protectBlock);
 
     // Protect code blocks
     const codeBlocks = [];
@@ -163,6 +187,12 @@ function renderMarkdown(text) {
             continue;
         }
 
+        // Protected block placeholders — pass through as-is
+        if (/^\x00(HTMLBLOCK|CODEBLOCK|INLINECODE)\d+\x00$/.test(trimmed)) {
+            result.push(trimmed);
+            continue;
+        }
+
         // Normal paragraph
         result.push(`<p class="cn-paragraph">${processInlineMarkdown(trimmed)}</p>`);
     }
@@ -180,6 +210,11 @@ function renderMarkdown(text) {
     });
     inlineCodes.forEach((code, i) => {
         text = text.replace(`\x00INLINECODE${i}\x00`, code);
+    });
+
+    // Restore protected HTML blocks (must be last — after all other restore steps)
+    protectedBlocks.forEach((block, i) => {
+        text = text.replace(`\x00HTMLBLOCK${i}\x00`, block);
     });
 
     return text;
