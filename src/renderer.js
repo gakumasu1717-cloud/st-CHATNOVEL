@@ -69,31 +69,45 @@ function unwrapPreviousInfoBlocks(text) {
 // ===== HTML Document → iframe Conversion =====
 
 /**
- * Convert complete HTML documents (<!DOCTYPE html>...) in text to <iframe srcdoc>.
- * ST regex scripts output full HTML documents with CSS + JS that need
- * isolated rendering. iframe provides independent document context where
- * scripts execute and styles don't leak.
- *
- * Must be called AFTER code fence extraction (OLD DOCTYPEs in ``` are already
- * protected) but BEFORE markdown rendering.
+ * Find complete HTML documents (<!DOCTYPE html>...) and replace them with
+ * placeholder divs. The actual iframe HTML is stored in an array and restored
+ * AFTER markdown processing to avoid the markdown renderer escaping srcdoc content.
  *
  * @param {string} text - Text with potential HTML documents
- * @returns {string} Text with HTML documents replaced by iframe tags
+ * @returns {{ text: string, iframePlaceholders: string[] }}
  */
 function convertHtmlDocsToIframes(text) {
-    if (!text) return text;
+    const iframePlaceholders = [];
+    if (!text) return { text, iframePlaceholders };
 
-    // Match complete HTML documents: <!DOCTYPE html>...</html> or <html>...</html>
     const htmlDocPattern = /(?:<!DOCTYPE\s+html[^>]*>[\s\S]*?<\/html>|<html[^>]*>[\s\S]*?<\/html>)/gi;
 
-    return text.replace(htmlDocPattern, (match) => {
-        // Escape for srcdoc attribute: & → &amp;, " → &quot;
+    const processed = text.replace(htmlDocPattern, (match) => {
         const escaped = match
             .replace(/&/g, '&amp;')
             .replace(/"/g, '&quot;');
 
-        return `<iframe class="cn-regex-iframe" srcdoc="${escaped}" sandbox="allow-scripts allow-same-origin" frameborder="0" scrolling="no"></iframe>`;
+        const iframe = `<iframe class="cn-regex-iframe" srcdoc="${escaped}" sandbox="allow-scripts allow-same-origin" frameborder="0" scrolling="no"></iframe>`;
+        const index = iframePlaceholders.length;
+        iframePlaceholders.push(iframe);
+        return `<div data-cn-iframe-placeholder="${index}"></div>`;
     });
+
+    return { text: processed, iframePlaceholders };
+}
+
+/**
+ * Restore iframe placeholders with actual iframe HTML after markdown processing.
+ * @param {string} html - Markdown-processed HTML
+ * @param {string[]} iframePlaceholders - Array of iframe HTML strings
+ * @returns {string}
+ */
+function restoreIframePlaceholders(html, iframePlaceholders) {
+    if (!iframePlaceholders || iframePlaceholders.length === 0) return html;
+    return html.replace(
+        /<div data-cn-iframe-placeholder="(\d+)"><\/div>/g,
+        (match, index) => iframePlaceholders[parseInt(index, 10)] || match
+    );
 }
 
 // ===== Choices Processing =====
@@ -154,10 +168,6 @@ function renderMarkdown(text) {
         codeBlocks.push(`<pre class="cn-code-block"><code>${escapeHtml(code.trim())}</code></pre>`);
         return `\x00CODEBLOCK${idx}\x00`;
     });
-
-    // Protect <iframe> tags (already converted from DOCTYPEs by convertHtmlDocsToIframes)
-    // Must be before inline code — iframes contain srcdoc with backticks etc.
-    text = text.replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe>/gi, protectBlock);
 
     // Protect inline code
     const inlineCodes = [];
@@ -454,20 +464,23 @@ export function renderMessage(message, options) {
     // Current DOCTYPEs (status panels) are inside these blocks.
     text = unwrapPreviousInfoBlocks(text);
 
-    // 4. Convert complete HTML documents → <iframe srcdoc> BEFORE markdown.
+    // 4. Convert complete HTML documents → placeholders BEFORE markdown.
     // Code fences protect OLD DOCTYPEs; only CURRENT ones (outside ```) are converted.
-    // Must be before choices processing — regex scripts have their own choices UI
-    // inside DOCTYPE docs that processChoices must not touch.
-    text = convertHtmlDocsToIframes(text);
+    // Actual <iframe> tags are stored in array and restored after markdown.
+    const { text: textWithPlaceholders, iframePlaceholders } = convertHtmlDocsToIframes(text);
+    text = textWithPlaceholders;
 
     // 5. Choices processing (fallback for patterns not caught by regex).
-    // Safe now — DOCTYPEs are already converted to <iframe> tags.
+    // Safe now — DOCTYPEs are already replaced with placeholder divs.
     text = processChoices(text);
 
-    // 6. Markdown → HTML (iframes are protected by renderMarkdown automatically)
+    // 6. Markdown → HTML (placeholder <div>s pass through untouched)
     text = renderMarkdown(text);
 
-    // 7. Dialogue styling
+    // 7. Restore placeholders → actual <iframe srcdoc> tags (after markdown)
+    text = restoreIframePlaceholders(text, iframePlaceholders);
+
+    // 8. Dialogue styling
     text = styleDialogue(text, options.dialogueEnabled);
 
     // 8. Extra images (SD-generated, pasted, auto-pic, etc.)
