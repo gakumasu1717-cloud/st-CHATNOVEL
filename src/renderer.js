@@ -390,16 +390,35 @@ export function renderMessage(message, options) {
         });
     }
 
-    // 3. Choices processing (fallback for patterns not caught by regex)
+    // 2.5. Strip "이전 정보" details blocks — noise in novel reading mode.
+    // Regex scripts wrap previous state in <details><summary>[ 이전 정보 ]</summary>...
+    // which is useful in chat but clutters the novel reader.
+    text = text.replace(/<details[^>]*>\s*<summary[^>]*>[^<]*이전\s*정보[^<]*<\/summary>[\s\S]*?<\/details>/gi, '');
+
+    // 3. Protect DOCTYPE blocks from choices processing.
+    // Regex scripts have their own choices UI (선택/대필 buttons) inside DOCTYPE docs.
+    // processChoices must NOT modify <choices> tags inside those documents.
+    const doctypeBlocks = [];
+    text = text.replace(/<!DOCTYPE\s+html[^>]*>[\s\S]*?<\/html>/gi, (match) => {
+        doctypeBlocks.push(match);
+        return `\x00DOCTYPEHOLD${doctypeBlocks.length - 1}\x00`;
+    });
+
+    // 4. Choices processing (fallback for patterns not caught by regex)
     text = processChoices(text);
 
-    // 4. Markdown → HTML
+    // 5. Restore DOCTYPE blocks
+    doctypeBlocks.forEach((block, i) => {
+        text = text.replace(`\x00DOCTYPEHOLD${i}\x00`, block);
+    });
+
+    // 6. Markdown → HTML
     text = renderMarkdown(text);
 
-    // 5. Dialogue styling
+    // 7. Dialogue styling
     text = styleDialogue(text, options.dialogueEnabled);
 
-    // 6. Extra images (SD-generated, pasted, auto-pic, etc.)
+    // 8. Extra images (SD-generated, pasted, auto-pic, etc.)
     const extraImgHtml = renderExtraImages(message);
     if (extraImgHtml) {
         if (message.extra?.inline_image) {
