@@ -31,68 +31,36 @@ function substituteCharMacro(text, characterName) {
     return text.replace(/\{\{char\}\}/gi, characterName);
 }
 
-// ===== Previous Info Block Removal =====
+// ===== Previous Info Block Unwrapping =====
 
 /**
- * Strip <details> blocks whose summary contains "이전 정보".
- * Uses two strategies:
- * 1. Pattern-based: look for ``` + </details> marker (most reliable)
- * 2. Depth counting fallback: handle nested <details> by counting open/close
+ * Unwrap <details> blocks whose summary contains "이전 정보".
+ * Instead of removing the entire block (which deletes current DOCTYPEs too),
+ * this removes ONLY the <details>, <summary>, and </details> wrapper tags
+ * while keeping the inner content. The code fences inside will survive
+ * and renderMarkdown will turn OLD DOCTYPEs (inside ```) into harmless
+ * <pre><code> text, while CURRENT DOCTYPEs (outside ```) become iframes.
  * @param {string} text
  * @returns {string}
  */
-function stripPreviousInfoBlocks(text) {
+function unwrapPreviousInfoBlocks(text) {
     if (!text) return text;
 
-    const headerRe = /<details[^>]*>\s*<summary[^>]*>[^<]*이전\s*정보[^<]*<\/summary>/i;
-    let iterations = 0;
-    let match;
+    // Remove <details...><summary...>이전 정보</summary> opening tags
+    text = text.replace(/<details[^>]*>\s*<summary[^>]*>[^<]*이전\s*정보[^<]*<\/summary>/gi, '');
 
-    while ((match = headerRe.exec(text)) !== null && iterations < 10) {
-        iterations++;
-        const afterMatch = text.substring(match.index + match[0].length);
+    // Remove orphaned </details> that were part of the block.
+    // After removing the opening tag, the matching </details> remains.
+    // We can't just remove ALL </details> — only the ones from 이전 정보 blocks.
+    // But since the opening tags are now gone, any </details> without a matching
+    // <details> is orphaned and should be removed. Count and clean up.
+    let openCount = (text.match(/<details\b/gi) || []).length;
+    let closeCount = (text.match(/<\/details\s*>/gi) || []).length;
 
-        // Strategy 1: Find ``` followed by </details> (the code-fence wrapping pattern)
-        const fenceEndRe = /```\s*<\/details\s*>/;
-        const fenceEndMatch = fenceEndRe.exec(afterMatch);
-        if (fenceEndMatch) {
-            const endPos = match.index + match[0].length + fenceEndMatch.index + fenceEndMatch[0].length;
-            text = text.substring(0, match.index) + text.substring(endPos);
-            continue;
-        }
-
-        // Strategy 2: Find </details> right after a line break (simple fallback)
-        const simpleEndRe = /\n<\/details\s*>/;
-        const simpleEndMatch = simpleEndRe.exec(afterMatch);
-        if (simpleEndMatch) {
-            const endPos = match.index + match[0].length + simpleEndMatch.index + simpleEndMatch[0].length;
-            text = text.substring(0, match.index) + text.substring(endPos);
-            continue;
-        }
-
-        // Strategy 3: Depth counting (last resort)
-        let depth = 1;
-        let pos = match.index + match[0].length;
-        let found = false;
-        while (depth > 0 && pos < text.length) {
-            const openIdx = text.indexOf('<details', pos);
-            const closeIdx = text.indexOf('</details', pos);
-            if (closeIdx === -1) break;
-            if (openIdx !== -1 && openIdx < closeIdx) {
-                depth++;
-                pos = openIdx + 8;
-            } else {
-                depth--;
-                if (depth === 0) {
-                    const endIdx = text.indexOf('>', closeIdx) + 1;
-                    text = text.substring(0, match.index) + text.substring(endIdx);
-                    found = true;
-                    break;
-                }
-                pos = closeIdx + 10;
-            }
-        }
-        if (!found) break; // Prevent infinite loop
+    // Remove excess </details> (orphaned from unwrapped blocks)
+    while (closeCount > openCount) {
+        text = text.replace(/<\/details\s*>/, '');
+        closeCount--;
     }
 
     return text;
@@ -462,12 +430,14 @@ export function renderMessage(message, options) {
         });
     }
 
-    // 2.5. Strip "이전 정보" details blocks BEFORE any HTML processing.
-    const beforeStripLen = text.length;
-    text = stripPreviousInfoBlocks(text);
+    // 2.5. Unwrap "이전 정보" details blocks — remove the wrapper tags
+    // but KEEP the content inside. Current DOCTYPEs (status panels) are
+    // inside these blocks; stripping them would delete all state display.
+    // Code fences inside will still protect OLD DOCTYPEs from becoming iframes.
+    const beforeLen = text.length;
+    text = unwrapPreviousInfoBlocks(text);
     const hasDOCTYPE = /<!DOCTYPE/i.test(text);
-    const hasHtml = /<\/html>/i.test(text);
-    console.log(`[ChatNovel] msg ${message._index}: stripPreviousInfo: ${beforeStripLen} -> ${text.length} chars, DOCTYPE=${hasDOCTYPE}, </html>=${hasHtml}, first150=${JSON.stringify(text.substring(0, 150))}`);
+    console.log(`[ChatNovel] msg ${message._index}: unwrap이전정보: ${beforeLen} -> ${text.length} chars, DOCTYPE=${hasDOCTYPE}`);
 
     // 3. Protect DOCTYPE blocks from choices processing.
     // Regex scripts have their own choices UI (선택/대필 buttons) inside DOCTYPE docs.
