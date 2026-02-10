@@ -3,6 +3,12 @@
  * Comprehensive styles for the overlay reader UI.
  */
 
+/* ===== Body scroll lock when reader is open ===== */
+body.cn-reader-open {
+    overflow: hidden !important;
+    touch-action: none;
+}
+
 /* ===== CSS Variables (defaults — overridden by theme) ===== */
 .cn-overlay {
     --cn-bg: #0f0f14;
@@ -49,6 +55,12 @@
     flex-direction: column;
     opacity: 0;
     transition: opacity 0.3s ease;
+    /* Mobile viewport: use dvh to account for browser chrome */
+    height: 100vh;
+    height: 100dvh;
+    width: 100vw;
+    width: 100dvw;
+    overflow: hidden;
 }
 
 .cn-overlay.cn-overlay-active {
@@ -320,6 +332,8 @@
     padding: 40px 24px 80px;
     scroll-behavior: smooth;
     outline: none;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
 }
 
 .cn-content::-webkit-scrollbar {
@@ -918,6 +932,22 @@
 .cn-overlay ::selection {
     background: var(--cn-accent);
     color: white;
+}
+
+/* ===== Loading Indicator ===== */
+.cn-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--cn-text-secondary);
+    font-size: 1.1em;
+    animation: cn-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes cn-pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
 }
 
 /* ===== Print Styles ===== */

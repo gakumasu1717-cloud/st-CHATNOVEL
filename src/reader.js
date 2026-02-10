@@ -44,6 +44,8 @@ const state = {
 
 /**
  * Open the Chat Novel reader.
+ * Shows the overlay shell immediately, then defers heavy parsing/rendering
+ * to the next frame to avoid blocking the click handler.
  */
 export function openReader() {
     if (state.isOpen) return;
@@ -60,31 +62,30 @@ export function openReader() {
         }
 
         // Generate a stable chat ID for position saving
-        // Use ST's chat metadata or first message timestamp for stability
         const chatMeta = chat[0]?.chat_metadata || chat.find(m => m.chat_metadata)?.chat_metadata;
         state.chatId = chatMeta?.chat_id_hash
             || chatMeta?.integrity
             || `${characterName}_${chat[0]?.send_date || 'unknown'}`;
 
-        // Parse the chat from ST's rendered DOM
-        const parsed = parseChatFromDOM();
-        state.metadata = parsed.metadata;
-
-        // Get settings
         const settings = getSettings();
 
-        // Chapterize
-        state.chapters = chapterize(parsed.messages, {
-            mode: settings.chapterMode,
-            messagesPerChapter: settings.messagesPerChapter,
-            timeGapHours: settings.timeGapHours,
-        });
-
-        // Create overlay
-        createOverlay(settings, userName, characterName);
-
+        // Show overlay shell immediately (fast — no parsing/rendering)
+        createOverlayShell(settings, userName, characterName);
         state.isOpen = true;
-        console.log(`[ChatNovel] Opened reader: ${parsed.messages.length} messages, ${state.chapters.length} chapters`);
+        document.body.classList.add('cn-reader-open');
+
+        // Defer heavy work to next frame to avoid blocking the click handler
+        requestAnimationFrame(() => {
+            try {
+                loadContent(settings, userName, characterName);
+            } catch (e) {
+                console.error('[ChatNovel] Failed to render:', e);
+                const contentEl = state.overlay?.querySelector('.cn-content');
+                if (contentEl) {
+                    contentEl.innerHTML = `<div style="padding:40px;text-align:center;color:#f44;">오류: ${escapeHtml(e.message)}</div>`;
+                }
+            }
+        });
 
     } catch (e) {
         console.error('[ChatNovel] Failed to open reader:', e);
@@ -138,28 +139,29 @@ export function closeReader() {
         if (window.ChatNovelLightbox) {
             delete window.ChatNovelLightbox;
         }
+
+        // Remove body scroll lock
+        document.body.classList.remove('cn-reader-open');
     }, 300);
 }
 
 /**
- * Create the reader overlay DOM.
+ * Create the overlay shell (header, empty content, footer, event bindings).
+ * Does NOT parse or render content — that's deferred to loadContent().
  * @param {Object} settings
  * @param {string} userName
  * @param {string} characterName
  */
-function createOverlay(settings, userName, characterName) {
+function createOverlayShell(settings, userName, characterName) {
     const overlay = document.createElement('div');
     overlay.className = 'cn-overlay';
     overlay.id = 'chat-novel-overlay';
-
-    // Build header
-    const title = state.metadata?.character_name || characterName;
 
     overlay.innerHTML = `
         <div class="cn-header">
             <div class="cn-header-left">
                 <button class="cn-btn cn-sidebar-btn" title="사이드바 토글">≡</button>
-                <span class="cn-header-title">📖 Chat Novel — ${escapeHtml(title)}</span>
+                <span class="cn-header-title">📖 Chat Novel — ${escapeHtml(characterName)}</span>
             </div>
             <div class="cn-header-right">
                 <button class="cn-btn cn-theme-btn" title="테마 변경">🎨</button>
@@ -173,7 +175,9 @@ function createOverlay(settings, userName, characterName) {
         </div>
         <div class="cn-body">
             <div class="cn-sidebar-container"></div>
-            <div class="cn-content"></div>
+            <div class="cn-content">
+                <div class="cn-loading">로딩 중...</div>
+            </div>
         </div>
         <div class="cn-footer">
             <div class="cn-footer-progress">
@@ -192,23 +196,6 @@ function createOverlay(settings, userName, characterName) {
 
     // Setup lightbox (with AbortController for cleanup)
     state._abortController = setupLightbox(overlay);
-
-    // Render content
-    const contentEl = overlay.querySelector('.cn-content');
-    renderAllChapters(contentEl, settings, userName, characterName);
-
-    // Setup sidebar
-    const sidebarContainer = overlay.querySelector('.cn-sidebar-container');
-    state.sidebar = createSidebar(sidebarContainer, state.chapters, (chapterIdx) => {
-        scrollToChapter(chapterIdx);
-    });
-    sidebarContainer.appendChild(state.sidebar.element);
-
-    // Setup scroll tracking
-    setupScrollTracking(contentEl);
-
-    // Setup keyboard shortcuts
-    setupKeyboardShortcuts(contentEl);
 
     // Bind button events
     overlay.querySelector('.cn-close-btn').addEventListener('click', closeReader);
@@ -233,6 +220,50 @@ function createOverlay(settings, userName, characterName) {
     };
     document.addEventListener('keydown', state._escHandler);
 
+    // Animate in
+    requestAnimationFrame(() => {
+        overlay.classList.add('cn-overlay-active');
+    });
+}
+
+/**
+ * Parse chat, chapterize, and render into the already-visible overlay.
+ * Called in a deferred frame after the shell is shown.
+ * @param {Object} settings
+ * @param {string} userName
+ * @param {string} characterName
+ */
+function loadContent(settings, userName, characterName) {
+    // Heavy: parse DOM + chapterize
+    const parsed = parseChatFromDOM();
+    state.metadata = parsed.metadata;
+
+    // Update header title with parsed metadata
+    const title = state.metadata?.character_name || characterName;
+    const titleEl = state.overlay.querySelector('.cn-header-title');
+    if (titleEl) titleEl.textContent = `\ud83d\udcd6 Chat Novel \u2014 ${title}`;
+
+    state.chapters = chapterize(parsed.messages, {
+        mode: settings.chapterMode,
+        messagesPerChapter: settings.messagesPerChapter,
+        timeGapHours: settings.timeGapHours,
+    });
+
+    // Render content
+    const contentEl = state.overlay.querySelector('.cn-content');
+    renderAllChapters(contentEl, settings, userName, characterName);
+
+    // Setup sidebar
+    const sidebarContainer = state.overlay.querySelector('.cn-sidebar-container');
+    state.sidebar = createSidebar(sidebarContainer, state.chapters, (chapterIdx) => {
+        scrollToChapter(chapterIdx);
+    });
+    sidebarContainer.appendChild(state.sidebar.element);
+
+    // Setup scroll tracking + keyboard
+    setupScrollTracking(contentEl);
+    setupKeyboardShortcuts(contentEl);
+
     // Restore reading position
     const savedPos = getReadingPosition(state.chatId);
     if (savedPos && savedPos.scrollTop) {
@@ -241,13 +272,7 @@ function createOverlay(settings, userName, characterName) {
         }, 100);
     }
 
-    // Animate in
-    requestAnimationFrame(() => {
-        overlay.classList.add('cn-overlay-active');
-    });
-
-    // Set up event delegation for image lightbox
-    setupImageClickDelegation(contentEl);
+    console.log(`[ChatNovel] Opened reader: ${parsed.messages.length} messages, ${state.chapters.length} chapters`);
 }
 
 /**
