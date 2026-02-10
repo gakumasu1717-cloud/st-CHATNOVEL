@@ -104,7 +104,7 @@ export function createSidebar(container, chapters, onChapterSelect) {
 
         chapters.forEach((chapter, chapterIdx) => {
             chapter.messages.forEach((msg, msgIdx) => {
-                const text = stripHtml(msg.renderedHtml) || msg.mes || '';
+                const text = msg.mes || '';
                 const lowerText = text.toLowerCase();
                 const pos = lowerText.indexOf(lowerQuery);
 

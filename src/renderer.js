@@ -1,31 +1,274 @@
 /**
  * Chat Novel — Renderer
  * Renders parsed messages and chapters to HTML for the novel reader.
- * 
- * In the DOM-based architecture, messages already have `renderedHtml` from ST.
- * This module acts as a passthrough for DOM-sourced content, with a basic
- * fallback renderer for messages not present in DOM (lazy rendering).
+ * Pipeline: raw mes → macro substitution → regex → choices → markdown → dialogue styling.
  */
 
 import { escapeHtml } from './utils.js';
 
+// ===== Macro Substitution =====
+
+/**
+ * Replace {{user}} macros in text.
+ * @param {string} text
+ * @param {string} userName
+ * @returns {string}
+ */
+function substituteUserMacro(text, userName) {
+    if (!text || !userName) return text;
+    return text.replace(/\{\{user\}\}/gi, userName);
+}
+
+/**
+ * Replace {{char}} macros in text.
+ * @param {string} text
+ * @param {string} characterName
+ * @returns {string}
+ */
+function substituteCharMacro(text, characterName) {
+    if (!text || !characterName) return text;
+    return text.replace(/\{\{char\}\}/gi, characterName);
+}
+
+// ===== Choices Processing =====
+
+/**
+ * Process <choices> blocks and numbered choice patterns.
+ * Converts them into styled choice cards.
+ * @param {string} text
+ * @returns {string}
+ */
+function processChoices(text) {
+    if (!text) return text;
+
+    // Handle <choices>...</choices> blocks
+    text = text.replace(/<choices>([\s\S]*?)<\/choices>/gi, (match, content) => {
+        const lines = content.trim().split('\n').filter(l => l.trim());
+        if (lines.length === 0) return match;
+
+        let html = '<div class="cn-choices-container"><div class="cn-choices-header">선택지</div>';
+        lines.forEach((line, i) => {
+            const cleanLine = line.replace(/^\d+[\.\)\-]\s*/, '').trim();
+            if (cleanLine) {
+                html += `<div class="cn-choice-card"><span class="cn-choice-number">${i + 1}.</span><span class="cn-choice-text">${escapeHtml(cleanLine)}</span></div>`;
+            }
+        });
+        html += '</div>';
+        return html;
+    });
+
+    return text;
+}
+
+// ===== Markdown Rendering =====
+
+/**
+ * Render markdown-like text to HTML.
+ * Handles headings, bold, italic, code, links, lists, HR, blockquotes.
+ * @param {string} text
+ * @returns {string}
+ */
+function renderMarkdown(text) {
+    if (!text) return '';
+
+    // Protect code blocks
+    const codeBlocks = [];
+    text = text.replace(/```(\w*)\n?([\s\S]*?)```/g, (match, lang, code) => {
+        const idx = codeBlocks.length;
+        codeBlocks.push(`<pre class="cn-code-block"><code>${escapeHtml(code.trim())}</code></pre>`);
+        return `\x00CODEBLOCK${idx}\x00`;
+    });
+
+    // Protect inline code
+    const inlineCodes = [];
+    text = text.replace(/`([^`]+)`/g, (match, code) => {
+        const idx = inlineCodes.length;
+        inlineCodes.push(`<code class="cn-inline-code">${escapeHtml(code)}</code>`);
+        return `\x00INLINECODE${idx}\x00`;
+    });
+
+    // Process line by line
+    let lines = text.split('\n');
+    let result = [];
+    let inList = false;
+    let listType = '';
+
+    for (let i = 0; i < lines.length; i++) {
+        let line = lines[i];
+        const trimmed = line.trim();
+
+        // Close list if non-list line
+        if (inList && !trimmed.match(/^[\-\*]\s/) && !trimmed.match(/^\d+\.\s/)) {
+            result.push(listType === 'ul' ? '</ul>' : '</ol>');
+            inList = false;
+        }
+
+        // Empty line
+        if (!trimmed) {
+            result.push('<br />');
+            continue;
+        }
+
+        // Headings
+        const headingMatch = trimmed.match(/^(#{1,6})\s+(.+)$/);
+        if (headingMatch) {
+            const level = headingMatch[1].length;
+            const content = processInlineMarkdown(headingMatch[2]);
+            result.push(`<h${level} class="cn-heading">${content}</h${level}>`);
+            continue;
+        }
+
+        // Horizontal rule
+        if (/^[-*_]{3,}\s*$/.test(trimmed)) {
+            result.push('<hr class="cn-hr" />');
+            continue;
+        }
+
+        // Blockquote
+        if (trimmed.startsWith('>')) {
+            const quoteContent = processInlineMarkdown(trimmed.replace(/^>\s?/, ''));
+            result.push(`<blockquote class="cn-blockquote">${quoteContent}</blockquote>`);
+            continue;
+        }
+
+        // Unordered list
+        const ulMatch = trimmed.match(/^[\-\*]\s+(.+)$/);
+        if (ulMatch) {
+            if (!inList || listType !== 'ul') {
+                if (inList) result.push(listType === 'ul' ? '</ul>' : '</ol>');
+                result.push('<ul class="cn-list">');
+                inList = true;
+                listType = 'ul';
+            }
+            result.push(`<li class="cn-list-item">${processInlineMarkdown(ulMatch[1])}</li>`);
+            continue;
+        }
+
+        // Ordered list
+        const olMatch = trimmed.match(/^\d+\.\s+(.+)$/);
+        if (olMatch) {
+            if (!inList || listType !== 'ol') {
+                if (inList) result.push(listType === 'ul' ? '</ul>' : '</ol>');
+                result.push('<ol class="cn-list">');
+                inList = true;
+                listType = 'ol';
+            }
+            result.push(`<li class="cn-list-item">${processInlineMarkdown(olMatch[1])}</li>`);
+            continue;
+        }
+
+        // HTML tag lines — don't wrap in <p>
+        if (/^<\/?[a-zA-Z]/.test(trimmed)) {
+            result.push(trimmed);
+            continue;
+        }
+
+        // Normal paragraph
+        result.push(`<p class="cn-paragraph">${processInlineMarkdown(trimmed)}</p>`);
+    }
+
+    // Close open list
+    if (inList) {
+        result.push(listType === 'ul' ? '</ul>' : '</ol>');
+    }
+
+    text = result.join('\n');
+
+    // Restore code blocks
+    codeBlocks.forEach((block, i) => {
+        text = text.replace(`\x00CODEBLOCK${i}\x00`, block);
+    });
+    inlineCodes.forEach((code, i) => {
+        text = text.replace(`\x00INLINECODE${i}\x00`, code);
+    });
+
+    return text;
+}
+
+/**
+ * Process inline markdown (bold, italic, links, etc.)
+ * @param {string} text
+ * @returns {string}
+ */
+function processInlineMarkdown(text) {
+    if (!text) return '';
+
+    // Bold + Italic (***text***)
+    text = text.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+
+    // Bold (**text**)
+    text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+
+    // Italic (*text*)
+    text = text.replace(/\*(.+?)\*/g, '<em>$1</em>');
+
+    // Strikethrough (~~text~~)
+    text = text.replace(/~~(.+?)~~/g, '<del>$1</del>');
+
+    // Links [text](url)
+    text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+
+    return text;
+}
+
+// ===== Dialogue Styling =====
+
+/**
+ * Style dialogue text (quoted speech).
+ * @param {string} html
+ * @param {boolean} enabled
+ * @returns {string}
+ */
+function styleDialogue(html, enabled) {
+    if (!enabled || !html) return html;
+
+    // Style "quoted speech" with dialogue class
+    html = html.replace(/(?<=>|^)([^<]*?"[^"]*?"[^<]*?)(?=<|$)/g, (match) => {
+        return match.replace(/"([^"]+)"/g, '<span class="cn-dialogue">"$1"</span>');
+    });
+
+    return html;
+}
+
+// ===== Public API =====
+
 /**
  * Render a single message to HTML.
- * Uses pre-rendered DOM HTML if available, otherwise falls back to basic rendering.
  * @param {Object} message - Parsed message object
- * @param {Object} options - Rendering options (unused in DOM mode, kept for API compat)
+ * @param {Object} options - Rendering options
+ * @param {string} options.userName
+ * @param {string} options.characterName
+ * @param {string} [options.characterKey]
+ * @param {boolean} [options.dialogueEnabled]
+ * @param {Function} [options.regexProcessor] - (text, opts) => processed text
  * @returns {string} HTML string
  */
 export function renderMessage(message, options) {
-    // DOM-sourced: use the already-rendered HTML from ST
-    if (message.renderedHtml) {
-        return message.renderedHtml;
+    let text = message.mes || '';
+
+    // 1. Macro substitution
+    text = substituteUserMacro(text, options.userName);
+    text = substituteCharMacro(text, options.characterName);
+
+    // 2. ST regex scripts (image conversion, custom tags, etc.)
+    if (options.regexProcessor) {
+        text = options.regexProcessor(text, {
+            isUser: message.is_user,
+            characterName: options.characterName,
+            characterKey: options.characterKey,
+            userName: options.userName,
+        });
     }
 
-    // Fallback: basic rendering for messages not in DOM
-    let text = message.mes || '';
-    text = escapeHtml(text);
-    text = text.replace(/\n/g, '<br>');
+    // 3. Choices processing (fallback for patterns not caught by regex)
+    text = processChoices(text);
+
+    // 4. Markdown → HTML
+    text = renderMarkdown(text);
+
+    // 5. Dialogue styling
+    text = styleDialogue(text, options.dialogueEnabled);
+
     return text;
 }
 
@@ -51,19 +294,15 @@ export function renderChapter(chapter, options) {
         const renderedText = renderMessage(msg, options);
         const roleClass = msg.is_user ? 'cn-msg-user' : (msg.is_system ? 'cn-msg-system' : 'cn-msg-character');
         const senderName = msg.is_system ? '' : msg.name;
-        const isUserAttr = msg.is_user ? ' is_user' : '';
 
-        // Replicate ST DOM structure: .mes > .mes_block > .mes_text
-        // This ensures ST extension CSS selectors (.mes .mes_text choices, etc.) match.
-        html += `<div class="cn-message mes${isUserAttr} ${roleClass}" data-msg-index="${msg._index}">`;
-        html += '<div class="mes_block">';
+        html += `<div class="cn-message ${roleClass}" data-msg-index="${msg._index}">`;
 
         if (senderName && !msg.is_system && options.showSenderName !== false) {
             html += `<div class="cn-msg-sender">${escapeHtml(senderName)}</div>`;
         }
 
-        html += `<div class="cn-msg-body mes_text">${renderedText}</div>`;
-        html += '</div></div>';
+        html += `<div class="cn-msg-body">${renderedText}</div>`;
+        html += '</div>';
     }
 
     html += '</div></div>';

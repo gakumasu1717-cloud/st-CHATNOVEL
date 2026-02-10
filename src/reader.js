@@ -1,10 +1,12 @@
 /**
  * Chat Novel — Reader UI Controller
  * Manages the full-screen overlay reader interface.
+ * Uses context.chat + ST regex scripts for rendering (not DOM scraping).
  */
 
-import { parseChatFromDOM } from './parser.js';
-import { setupLightbox, setupImageClickDelegation } from './imageHandler.js';
+import { parseChatArray } from './parser.js';
+import { applyAllRegex } from './regexEngine.js';
+import { processImages, setupLightbox, setupImageClickDelegation } from './imageHandler.js';
 import { chapterize } from './chapterizer.js';
 import { renderChapter } from './renderer.js';
 import { createSidebar } from './sidebar.js';
@@ -25,8 +27,9 @@ import { escapeHtml } from './utils.js';
  * @property {number} currentChapter
  * @property {Object|null} sidebar
  * @property {string} chatId
- * @property {Function|null} _escHandler - ESC key handler reference for cleanup
- * @property {AbortController|null} _abortController - For cleaning up event listeners
+ * @property {string} characterKey
+ * @property {Function|null} _escHandler
+ * @property {AbortController|null} _abortController
  */
 
 /** @type {ReaderState} */
@@ -38,15 +41,14 @@ const state = {
     currentChapter: 0,
     sidebar: null,
     chatId: '',
+    characterKey: '',
     _escHandler: null,
     _abortController: null,
-    _origChatEl: null,
 };
 
 /**
  * Open the Chat Novel reader.
- * Shows the overlay shell immediately, then defers heavy parsing/rendering
- * to the next frame to avoid blocking the click handler.
+ * Parses context.chat, applies regex + markdown, renders in overlay.
  */
 export function openReader() {
     if (state.isOpen) return;
@@ -62,42 +64,38 @@ export function openReader() {
             return;
         }
 
+        // Compute characterKey for {{charkey}} macro in regex scripts
+        const avatar = context.characters?.[context.characterId]?.avatar;
+        state.characterKey = avatar ? avatar.replace(/\.png$/i, '') : characterName;
+
         // Generate a stable chat ID for position saving
         const chatMeta = chat[0]?.chat_metadata || chat.find(m => m.chat_metadata)?.chat_metadata;
         state.chatId = chatMeta?.chat_id_hash
             || chatMeta?.integrity
             || `${characterName}_${chat[0]?.send_date || 'unknown'}`;
 
-        const settings = getSettings();
-
-        // ★ DOM 파싱을 #chat ID 스왑 전에 실행
-        // 이 시점에서 원본 #chat이 아직 살아있으므로 .mes 요소를 찾을 수 있음
-        const parsed = parseChatFromDOM();
+        // Parse messages from context.chat
+        const parsed = parseChatArray(chat, userName, characterName);
         state.metadata = parsed.metadata;
 
+        const settings = getSettings();
+
+        // Chapterize
         state.chapters = chapterize(parsed.messages, {
             mode: settings.chapterMode,
             messagesPerChapter: settings.messagesPerChapter,
             timeGapHours: settings.timeGapHours,
         });
 
-        // Show overlay shell immediately (fast — no parsing/rendering)
+        // Create overlay shell (fast — no rendering yet)
         createOverlayShell(settings, userName, characterName);
         state.isOpen = true;
         document.body.classList.add('cn-reader-open');
 
-        // Temporarily swap original #chat ID so our reader's #chat takes priority
-        const origChat = document.querySelector('#chat:not(.cn-content)');
-        if (origChat) {
-            origChat.id = '';
-            origChat.dataset.cnOrigChat = 'true';
-            state._origChatEl = origChat;
-        }
-
-        // Defer rendering to next frame (이미 파싱된 데이터 사용 — DOM 쿼리 안 함)
+        // Defer heavy rendering to next frame
         requestAnimationFrame(() => {
             try {
-                loadContentFromParsed(settings, userName, characterName);
+                loadContent(settings, userName, characterName);
             } catch (e) {
                 console.error('[ChatNovel] Failed to render:', e);
                 const contentEl = state.overlay?.querySelector('.cn-content');
@@ -162,13 +160,6 @@ export function closeReader() {
 
         // Remove body scroll lock
         document.body.classList.remove('cn-reader-open');
-
-        // Restore original #chat ID
-        if (state._origChatEl) {
-            state._origChatEl.id = 'chat';
-            delete state._origChatEl.dataset.cnOrigChat;
-            state._origChatEl = null;
-        }
     }, 300);
 }
 
@@ -202,7 +193,7 @@ function createOverlayShell(settings, userName, characterName) {
         </div>
         <div class="cn-body">
             <div class="cn-sidebar-container"></div>
-            <div id="chat" class="cn-content">
+            <div class="cn-content">
                 <div class="cn-loading">로딩 중...</div>
             </div>
         </div>
@@ -254,13 +245,12 @@ function createOverlayShell(settings, userName, characterName) {
 }
 
 /**
- * Render already-parsed content into the overlay.
- * parseChatFromDOM() and chapterize() already done in openReader().
+ * Render parsed content into the overlay.
  * @param {Object} settings
  * @param {string} userName
  * @param {string} characterName
  */
-function loadContentFromParsed(settings, userName, characterName) {
+function loadContent(settings, userName, characterName) {
     // Update header title with parsed metadata
     const title = state.metadata?.character_name || characterName;
     const titleEl = state.overlay.querySelector('.cn-header-title');
@@ -305,7 +295,18 @@ function renderAllChapters(contentEl, settings, userName, characterName) {
     const renderOptions = {
         userName,
         characterName,
+        characterKey: state.characterKey,
         showSenderName: settings.showSenderName,
+        dialogueEnabled: settings.dialogueEnabled,
+        regexProcessor: (text, opts) => {
+            // 1. Apply ST regex scripts
+            let processed = applyAllRegex(text, opts);
+            // 2. Image pattern fallback (if regex didn't handle it)
+            if (settings.showImages !== false) {
+                processed = processImages(processed, characterName);
+            }
+            return processed;
+        },
     };
 
     for (const chapter of state.chapters) {

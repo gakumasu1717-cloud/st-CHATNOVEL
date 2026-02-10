@@ -1,6 +1,6 @@
 /**
  * Chat Novel — Parser
- * Parses SillyTavern chat data from DOM or JSONL into structured data.
+ * Parses SillyTavern chat data from context.chat or JSONL into structured data.
  */
 
 /**
@@ -16,14 +16,13 @@
  * @property {string} name
  * @property {boolean} is_user
  * @property {boolean} [is_system]
- * @property {string} mes - Original raw text (for search / fallback)
- * @property {string|null} [renderedHtml] - Pre-rendered HTML from ST DOM
+ * @property {string} mes - Original raw text
  * @property {string|number} send_date
  * @property {Object} [extra]
  * @property {number} [swipe_id]
  * @property {string[]} [swipes]
  * @property {Object[]} [swipe_info]
- * @property {number} _index - Original index in the JSONL
+ * @property {number} _index - Original index in the chat array
  * @property {Date} _parsedDate - Normalized date
  */
 
@@ -32,33 +31,6 @@
  * @property {ChatMetadata} metadata
  * @property {ChatMessage[]} messages
  */
-
-/**
- * Extract rendered HTML from a message element, stripping only CSS-hidden elements.
- * Preserves all custom/extension elements (status panels, maps, etc.)
- * because ST's CSS will style them when the reader uses the `mes_text` class.
- * @param {HTMLElement} textEl - The original .mes_text element
- * @returns {string} Cleaned innerHTML
- */
-function getCleanHtml(textEl) {
-    const clone = textEl.cloneNode(true);
-
-    // Remove elements hidden via CSS (display:none, visibility:hidden)
-    const origEls = textEl.querySelectorAll('*');
-    const cloneEls = clone.querySelectorAll('*');
-    for (let i = cloneEls.length - 1; i >= 0; i--) {
-        if (i < origEls.length) {
-            try {
-                const cs = getComputedStyle(origEls[i]);
-                if (cs.display === 'none' || cs.visibility === 'hidden') {
-                    cloneEls[i].remove();
-                }
-            } catch { /* skip */ }
-        }
-    }
-
-    return clone.innerHTML;
-}
 
 /**
  * Normalize send_date to a Date object.
@@ -210,84 +182,6 @@ export function parseChatArray(chatArray, userName, characterName) {
         }
 
         messages.push(msg);
-    }
-
-    return { metadata, messages };
-}
-
-/**
- * Parse chat data from the ST chat DOM.
- * Extracts already-rendered HTML (with all regex, JS-Slash-Runner, LALib processing applied).
- * Falls back to context.chat raw text for messages not present in DOM (lazy rendering).
- * @returns {ParsedChat}
- */
-export function parseChatFromDOM() {
-    const context = SillyTavern.getContext();
-    const chat = context.chat || [];
-    const userName = context.name1 || 'User';
-    const characterName = context.characters?.[context.characterId]?.name || context.name2 || 'Character';
-
-    // Metadata
-    const metaEntry = chat[0]?.chat_metadata ? chat[0] : chat.find(m => m.chat_metadata);
-    const metadata = {
-        user_name: userName,
-        character_name: characterName,
-        create_date: metaEntry?.create_date || new Date().toISOString(),
-        chat_metadata: metaEntry?.chat_metadata || {},
-    };
-
-    // Build a map of DOM-rendered messages by mesid
-    const domMap = new Map();
-    const messageElements = document.querySelectorAll('#chat .mes');
-    messageElements.forEach((el) => {
-        const mesId = parseInt(el.getAttribute('data-mesid'), 10);
-        if (isNaN(mesId)) return;
-
-        const isUser = el.classList.contains('is_user');
-        const isSystem = el.classList.contains('is_system');
-        const nameEl = el.querySelector('.ch_name .name_text');
-        const textEl = el.querySelector('.mes_text');
-
-        domMap.set(mesId, {
-            renderedHtml: textEl ? getCleanHtml(textEl) : null,
-            domName: nameEl?.textContent?.trim() || '',
-            isUser,
-            isSystem,
-        });
-    });
-
-    // Walk through context.chat to build the full message list
-    // (DOM may be missing some messages due to ST lazy rendering)
-    const messages = [];
-    for (let i = 0; i < chat.length; i++) {
-        const item = chat[i];
-
-        // Skip metadata-only entries
-        if (!item.mes && !item.name && item.user_name) continue;
-        if (!item.mes && !item.name) continue;
-
-        const domData = domMap.get(i);
-        const isUser = domData?.isUser ?? !!item.is_user;
-        const isSystem = domData?.isSystem ?? !!item.is_system;
-
-        // Handle swipes for the raw text fallback
-        let rawMes = item.mes || '';
-        if (item.swipes && Array.isArray(item.swipes) && typeof item.swipe_id === 'number') {
-            const selectedSwipe = item.swipes[item.swipe_id];
-            if (selectedSwipe != null) rawMes = selectedSwipe;
-        }
-
-        messages.push({
-            name: domData?.domName || item.name || (isUser ? userName : characterName),
-            is_user: isUser,
-            is_system: isSystem,
-            mes: rawMes,
-            renderedHtml: domData?.renderedHtml || null,
-            send_date: item.send_date || '',
-            extra: item.extra || {},
-            _index: i,
-            _parsedDate: normalizeSendDate(item.send_date),
-        });
     }
 
     return { metadata, messages };

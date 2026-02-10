@@ -973,41 +973,11 @@ body.cn-reader-open {
     }
 }
 
-/* ===== ST DOM-sourced HTML scoping ===== */
+/* ===== Custom HTML from regex/extensions — base styles ===== */
 /*
- * Message DOM replicates ST structure: .mes > .mes_block > .mes_text
- * + .cn-content has id="chat" so #chat selectors from ST extensions match.
- * This ensures CSS from JS-Slash-Runner, LALib, etc. cascades correctly.
- * Only override properties that conflict with the reader layout.
+ * ST regex scripts output HTML (images, status panels, tables, etc.)
+ * These styles ensure regex-generated content renders nicely in the reader.
  */
-.cn-overlay .mes_text {
-    /* Prevent ST's .mes_text layout styles from breaking the reader */
-    padding: 0 !important;
-    margin: 0 !important;
-    min-height: unset !important;
-    /* Inherit reader typography */
-    font-family: inherit;
-    font-size: inherit;
-    line-height: inherit;
-    color: inherit;
-}
-
-/* Prevent ST .mes styles from adding unwanted backgrounds/borders */
-.cn-overlay .mes {
-    background: none !important;
-    border: none !important;
-    box-shadow: none !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    min-height: unset !important;
-}
-
-.cn-overlay .mes_block {
-    padding: 0 !important;
-    margin: 0 !important;
-}
-
-/* Style ST-rendered elements inside message bodies */
 .cn-msg-body img {
     max-width: 100%;
     height: auto;
@@ -1023,35 +993,49 @@ body.cn-reader-open {
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
 }
 
-.cn-msg-body details {
-    margin: 8px 0;
-    padding: 8px 12px;
-    background: var(--cn-card-bg);
-    border: 1px solid var(--cn-border);
-    border-radius: 6px;
-}
-
-.cn-msg-body summary {
-    cursor: pointer;
-    font-weight: 600;
-    margin-bottom: 4px;
-    color: var(--cn-text);
-}
-
 .cn-msg-body table {
-    width: 100%;
     border-collapse: collapse;
-    margin: 8px 0;
+    width: 100%;
+    margin: 12px 0;
 }
 
 .cn-msg-body th,
 .cn-msg-body td {
-    padding: 6px 10px;
     border: 1px solid var(--cn-border);
+    padding: 6px 10px;
     text-align: left;
 }
 
 .cn-msg-body th {
     background: var(--cn-card-bg);
     font-weight: 600;
+}
+
+.cn-msg-body details {
+    margin: 12px 0;
+    padding: 10px;
+    background: var(--cn-card-bg);
+    border: 1px solid var(--cn-card-border);
+    border-radius: 8px;
+}
+
+.cn-msg-body summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--cn-accent);
+}
+
+/* Inline <style> blocks from regex output — hide text, CSS still applies */
+.cn-msg-body style {
+    display: none;
+}
+
+/* Blockquote styling */
+.cn-msg-body blockquote,
+.cn-blockquote {
+    border-left: 3px solid var(--cn-accent);
+    padding: 4px 12px;
+    margin: 8px 0;
+    color: var(--cn-text-secondary);
+    font-style: italic;
 }

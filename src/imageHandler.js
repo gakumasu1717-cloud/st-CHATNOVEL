@@ -1,10 +1,89 @@
 /**
  * Chat Novel — Image Handler
- * Provides lightbox viewer and base64 conversion for images.
- * 
- * In the DOM-based architecture, images are already rendered as <img> tags
- * by ST. This module only handles lightbox viewing and export utilities.
+ * Handles {{img::}} pattern conversion, lightbox viewer, and base64 export.
  */
+
+import { escapeHtml } from './utils.js';
+
+/**
+ * Escape a string for use in HTML attributes.
+ * @param {string} str
+ * @returns {string}
+ */
+function escapeAttr(str) {
+    if (!str) return '';
+    return str
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#x27;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
+/**
+ * Resolve an image filename to a full path.
+ * Uses ST's character image directory convention.
+ * @param {string} filename - The image filename
+ * @param {string} characterName - The character name (for folder path)
+ * @returns {string} Resolved URL path
+ */
+function resolveImagePath(filename, characterName) {
+    if (!filename) return '';
+
+    // Already a full URL or data URI
+    if (filename.startsWith('http://') || filename.startsWith('https://') || filename.startsWith('data:')) {
+        return filename;
+    }
+
+    // Already an absolute path
+    if (filename.startsWith('/')) {
+        return filename;
+    }
+
+    // Resolve to ST character image directory
+    const cleanCharName = characterName || 'Unknown';
+    return `/characters/${encodeURIComponent(cleanCharName)}/${encodeURIComponent(filename)}`;
+}
+
+/**
+ * Create HTML for an image element.
+ * No inline onclick — uses event delegation via setupImageClickDelegation().
+ * @param {string} src - Image source URL
+ * @param {string} alt - Alt text
+ * @returns {string} HTML string
+ */
+export function createImageHtml(src, alt) {
+    const escapedSrc = escapeAttr(src);
+    const escapedAlt = escapeAttr(alt);
+
+    return `<div class="cn-image-container">
+        <img class="cn-image"
+             src="${escapedSrc}"
+             alt="${escapedAlt}"
+             title="${escapedAlt}"
+             loading="lazy"
+             data-cn-processed="true"
+             onerror="this.onerror=null; this.parentElement.innerHTML='<div class=\\'cn-image-fallback\\'><span class=\\'cn-image-fallback-icon\\'>🖼️</span><span>${escapedAlt}</span></div>'"
+        />
+    </div>`;
+}
+
+/**
+ * Process {{img::filename}} patterns in text.
+ * Fallback for when ST regex scripts don't handle this pattern.
+ * @param {string} text - The message text
+ * @param {string} characterName - Character name for image path resolution
+ * @returns {string} Text with {{img::}} replaced by <img> HTML
+ */
+export function processImages(text, characterName) {
+    if (!text) return text;
+
+    return text.replace(/\{\{img::([^}]+)\}\}/gi, (match, filename) => {
+        const trimmedFilename = filename.trim();
+        const src = resolveImagePath(trimmedFilename, characterName);
+        return createImageHtml(src, trimmedFilename);
+    });
+}
 
 /**
  * Set up the lightbox overlay for image viewing.
