@@ -603,6 +603,7 @@ body.cn-reader-open {
     /* p 태그 간격을 line-height에 연동 — 행간 줄이면 문단 간격도 같이 줄어듦 */
     margin-top: 0;
     margin-bottom: calc((var(--cn-line-height) - 1) * 0.25em);
+    text-indent: var(--cn-paragraph-indent, 0);
 }
 
 .cn-msg-highlight {
@@ -833,17 +834,68 @@ body.cn-reader-open {
     flex-shrink: 0;
 }
 
-.cn-footer-progress {
+.cn-footer-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
     height: 4px;
     background: var(--cn-progress-bg);
+    outline: none;
+    border: none;
+    margin: 0;
+    padding: 0;
+    display: block;
+    cursor: pointer;
 }
 
-.cn-footer-progress-fill {
-    height: 100%;
+.cn-footer-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
     background: var(--cn-progress-bar);
-    width: 0%;
-    transition: width 0.15s ease;
-    border-radius: 0 2px 2px 0;
+    cursor: pointer;
+    margin-top: -4px;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.cn-footer:hover .cn-footer-slider::-webkit-slider-thumb,
+.cn-footer-slider:active::-webkit-slider-thumb {
+    opacity: 1;
+}
+
+.cn-footer-slider::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--cn-progress-bar);
+    border: none;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.cn-footer:hover .cn-footer-slider::-moz-range-thumb,
+.cn-footer-slider:active::-moz-range-thumb {
+    opacity: 1;
+}
+
+.cn-footer-slider::-webkit-slider-runnable-track {
+    height: 4px;
+    background: linear-gradient(
+        to right,
+        var(--cn-progress-bar) 0%,
+        var(--cn-progress-bar) var(--slider-progress, 0%),
+        var(--cn-progress-bg) var(--slider-progress, 0%),
+        var(--cn-progress-bg) 100%
+    );
+}
+
+.cn-footer-slider::-moz-range-progress {
+    background: var(--cn-progress-bar);
+    height: 4px;
 }
 
 .cn-footer-info {

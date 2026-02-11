@@ -264,9 +264,7 @@ function createOverlayShell(settings, userName, characterName) {
             </div>
         </div>
         <div class="cn-footer">
-            <div class="cn-footer-progress">
-                <div class="cn-footer-progress-fill"></div>
-            </div>
+            <input type="range" class="cn-footer-slider" min="0" max="100" step="0.1" value="0" title="진행률" />
             <div class="cn-footer-info">
                 <button class="cn-footer-mode-btn" title="읽기 모드 전환">📖</button>
                 <span class="cn-footer-chapter"></span>
@@ -286,6 +284,12 @@ function createOverlayShell(settings, userName, characterName) {
     applyTheme(overlay, settings.theme);
     applyTypography(overlay, settings);
 
+    // Apply blue light filter
+    applyBluelightFilter(overlay, settings);
+
+    // Apply paragraph indent
+    applyParagraphIndent(overlay, settings);
+
     // Setup lightbox (with AbortController for cleanup)
     state._abortController = setupLightbox(overlay);
 
@@ -302,6 +306,22 @@ function createOverlayShell(settings, userName, characterName) {
     });
     overlay.querySelector('.cn-export-btn').addEventListener('click', () => {
         handleExport(userName, characterName);
+    });
+
+    // Footer slider — 드래그로 스크롤/페이지 이동
+    const footerSlider = overlay.querySelector('.cn-footer-slider');
+    footerSlider.addEventListener('input', () => {
+        const val = parseFloat(footerSlider.value);
+        footerSlider.style.setProperty('--slider-progress', `${val}%`);
+        const contentEl = overlay.querySelector('.cn-content');
+        if (!contentEl) return;
+        if (state.pageMode) {
+            const page = Math.round(val / 100 * Math.max(0, state.totalPages - 1));
+            goToPage(contentEl, page);
+        } else {
+            const scrollHeight = contentEl.scrollHeight - contentEl.clientHeight;
+            contentEl.scrollTop = (val / 100) * scrollHeight;
+        }
     });
 
     // Mode toggle button in footer
@@ -572,6 +592,31 @@ function setupSingleIframe(iframe) {
 }
 
 /**
+ * Apply blue light filter (brightness + warmth/sepia) to the overlay.
+ * @param {HTMLElement} overlay
+ * @param {Object} settings
+ */
+function applyBluelightFilter(overlay, settings) {
+    const brightness = settings.brightness ?? 100;
+    const warmth = settings.warmth ?? 0;
+    if (brightness === 100 && warmth === 0) {
+        overlay.style.removeProperty('filter');
+    } else {
+        overlay.style.filter = `brightness(${brightness}%) sepia(${warmth}%)`;
+    }
+}
+
+/**
+ * Apply paragraph indent (text-indent) via CSS variable.
+ * @param {HTMLElement} overlay
+ * @param {Object} settings
+ */
+function applyParagraphIndent(overlay, settings) {
+    const indent = settings.paragraphIndent ?? 0;
+    overlay.style.setProperty('--cn-paragraph-indent', `${indent}em`);
+}
+
+/**
  * Set up scroll tracking for progress and chapter detection.
  * @param {HTMLElement} contentEl
  */
@@ -608,9 +653,12 @@ function updateProgress(contentEl) {
 
     // Update progress bars
     const progressBar = state.overlay.querySelector('.cn-progress-bar');
-    const footerFill = state.overlay.querySelector('.cn-footer-progress-fill');
+    const footerSlider = state.overlay.querySelector('.cn-footer-slider');
     if (progressBar) progressBar.style.width = `${progress}%`;
-    if (footerFill) footerFill.style.width = `${progress}%`;
+    if (footerSlider) {
+        footerSlider.value = progress;
+        footerSlider.style.setProperty('--slider-progress', `${progress}%`);
+    }
 
     // Detect current chapter
     const chapterEls = contentEl.querySelectorAll('.cn-chapter');
@@ -881,9 +929,12 @@ function updatePageInfo(contentEl) {
         ? (state.currentPage / (state.totalPages - 1)) * 100
         : 100;
     const progressBar = state.overlay.querySelector('.cn-progress-bar');
-    const footerFill = state.overlay.querySelector('.cn-footer-progress-fill');
+    const footerSlider = state.overlay.querySelector('.cn-footer-slider');
     if (progressBar) progressBar.style.width = `${progress}%`;
-    if (footerFill) footerFill.style.width = `${progress}%`;
+    if (footerSlider) {
+        footerSlider.value = progress;
+        footerSlider.style.setProperty('--slider-progress', `${progress}%`);
+    }
 }
 
 /**
@@ -1265,12 +1316,25 @@ function showSettingsPanel(userName, characterName) {
                 else if (key === 'contentWidth') valueSpan.textContent = `${value}px`;
                 else if (key === 'timeGapHours') valueSpan.textContent = `${value}시간`;
                 else if (key === 'messagesPerChapter') valueSpan.textContent = `${value}개`;
+                else if (key === 'brightness') valueSpan.textContent = `${value}%`;
+                else if (key === 'warmth') valueSpan.textContent = `${value}%`;
+                else if (key === 'paragraphIndent') valueSpan.textContent = `${value}em`;
                 else valueSpan.textContent = `${value}`;
             }
 
             // Live preview typography changes
             if (['fontSize', 'lineHeight', 'contentWidth'].includes(key)) {
                 applyTypography(state.overlay, getSettings());
+            }
+
+            // Live preview blue light filter
+            if (['brightness', 'warmth'].includes(key)) {
+                applyBluelightFilter(state.overlay, getSettings());
+            }
+
+            // Live preview paragraph indent
+            if (key === 'paragraphIndent') {
+                applyParagraphIndent(state.overlay, getSettings());
             }
         });
     });

@@ -31,6 +31,13 @@ const DEFAULT_SETTINGS = Object.freeze({
     // Reading mode
     readingMode: 'scroll', // 'scroll' | 'page'
 
+    // Blue light filter
+    brightness: 100,
+    warmth: 0,
+
+    // Paragraph indent
+    paragraphIndent: 0, // em 단위, 0 = off
+
     // Bookmarks (per-chat): { chatId: [ { msgIndex, label, timestamp } ] }
     bookmarks: {},
 
@@ -351,6 +358,29 @@ export function createSettingsPanelHtml(currentSettings, themeList) {
                     <label>발화자 이름 표시</label>
                     <input type="checkbox" class="cn-setting-input" data-setting="showSenderName"
                         ${s.showSenderName ? 'checked' : ''} />
+                </div>
+                <div class="cn-setting-row">
+                    <label>단락 들여쓰기</label>
+                    <input type="range" class="cn-setting-input" data-setting="paragraphIndent"
+                        min="0" max="3" step="0.5" value="${s.paragraphIndent || 0}" />
+                    <span class="cn-setting-value">${s.paragraphIndent || 0}em</span>
+                </div>
+            </div>
+
+            <!-- Blue Light Filter -->
+            <div class="cn-settings-section">
+                <h4>🔆 화면 필터</h4>
+                <div class="cn-setting-row">
+                    <label>밝기</label>
+                    <input type="range" class="cn-setting-input" data-setting="brightness"
+                        min="50" max="100" step="5" value="${s.brightness || 100}" />
+                    <span class="cn-setting-value">${s.brightness || 100}%</span>
+                </div>
+                <div class="cn-setting-row">
+                    <label>따뜻한 색감</label>
+                    <input type="range" class="cn-setting-input" data-setting="warmth"
+                        min="0" max="60" step="5" value="${s.warmth || 0}" />
+                    <span class="cn-setting-value">${s.warmth || 0}%</span>
                 </div>
             </div>
 
