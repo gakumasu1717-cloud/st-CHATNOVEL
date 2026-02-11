@@ -86,8 +86,8 @@ function convertHtmlDocsToIframes(text) {
     const htmlDocPattern = /\[?\s*(?:<!DOCTYPE\s+html[^>]*>[\s\S]*?<\/html>|<html[^>]*>[\s\S]*?<\/html>)\s*\]?/gi;
 
     // iframe 내부에 주입할 CSS + 높이 통신 스크립트
-    const iframeOverrideCSS = '<style>html{overflow:hidden!important;margin:0!important;padding:0!important;scrollbar-width:none!important;}body{margin:0!important;padding:0!important;overflow:visible!important;height:auto!important;min-height:0!important;background:transparent;}::-webkit-scrollbar{display:none!important;}</style>';
-    // body 내용을 #cn-wrap으로 감싸는 스크립트 + 높이 측정
+    const iframeOverrideCSS = '<style>html,body{margin:0!important;padding:0!important;background:transparent;}html{scrollbar-width:none!important;}::-webkit-scrollbar{display:none!important;}</style>';
+    // body 내용을 #cn-wrap으로 감싸고, shrink-to-measure로 높이 측정
     const iframeResizeScript = `<script>
 (function(){
   document.addEventListener('DOMContentLoaded',function(){
@@ -101,29 +101,31 @@ function convertHtmlDocsToIframes(text) {
   function init(){
     var w=document.getElementById('cn-wrap');
     if(!w)return;
-    var busy=false;
+    var timer=null;
     function sendH(){
-      if(busy)return;
-      busy=true;
-      requestAnimationFrame(function(){
-        var h=w.getBoundingClientRect().height;
+      if(timer)return;
+      timer=setTimeout(function(){
+        timer=null;
+        // shrink-to-measure: 높이를 0으로 줄인 후 scrollHeight로 콘텐츠 높이 측정
+        var orig=w.style.height;
+        w.style.height='0';
+        var h=w.scrollHeight;
+        w.style.height=orig||'';
         if(h>0){
           window.parent.postMessage({type:'cn-iframe-resize',height:h},'*');
         }
-        busy=false;
-      });
+      },0);
     }
     sendH();
     document.querySelectorAll('details').forEach(function(d){
       d.addEventListener('toggle',function(){
         sendH();
-        setTimeout(sendH,50);
-        setTimeout(sendH,150);
-        setTimeout(sendH,400);
+        setTimeout(sendH,100);
+        setTimeout(sendH,300);
       });
     });
     new MutationObserver(function(){sendH();}).observe(w,{childList:true,subtree:true,attributes:true});
-    var t=[100,300,600,1500,3000,8000];t.forEach(function(d){setTimeout(sendH,d);});
+    [100,300,600,1500,3000,8000].forEach(function(d){setTimeout(sendH,d);});
   }
 })();
 <\/script>`;
