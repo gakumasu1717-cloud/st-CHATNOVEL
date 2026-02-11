@@ -705,7 +705,19 @@ function enablePageMode(contentEl) {
     const overlay = state.overlay;
     overlay.classList.add('cn-page-mode');
 
-    // 콘텐츠 영역을 column 레이아웃으로 전환
+    // column 레이아웃 설정 — contentEl에 CSS columns + scrollLeft 방식
+    const rect = contentEl.getBoundingClientRect();
+    const pageW = rect.width;
+    const pageH = rect.height;
+
+    contentEl.style.height = pageH + 'px';
+    contentEl.style.columnWidth = pageW + 'px';
+    contentEl.style.columnGap = '0px';
+    contentEl.style.columnFill = 'auto';
+    contentEl.style.overflowX = 'hidden';
+    contentEl.style.overflowY = 'hidden';
+
+    // 페이지 수 계산
     recalcPageLayout(contentEl);
 
     // 터치/클릭/키보드 이벤트 바인딩
@@ -735,36 +747,23 @@ function enablePageMode(contentEl) {
 function recalcPageLayout(contentEl) {
     const rect = contentEl.getBoundingClientRect();
     const pageWidth = rect.width;
-    const pageHeight = rect.height;
 
-    // CSS columns 대신 수평 스크롤 기반 페이지네이션
-    // 콘텐츠를 고정 높이로 잡고, overflow hidden + column 레이아웃 사용
-    contentEl.style.overflow = 'hidden';
-    contentEl.style.height = pageHeight + 'px';
-    contentEl.style.columnWidth = pageWidth + 'px';
-    contentEl.style.columnGap = '0px';
-    contentEl.style.columnFill = 'auto';
-    contentEl.style.paddingBottom = '0';
-
-    // iframe 로드 완료 후 재계산 (내부 높이가 바뀌면 column 수가 달라짐)
-    const iframes = contentEl.querySelectorAll('.cn-regex-iframe');
     const doCalc = () => {
         const totalWidth = contentEl.scrollWidth;
-        // column-gap이 0이므로 pageUnit = pageWidth
-        state.totalPages = Math.max(1, Math.ceil(totalWidth / pageWidth));
+        state.totalPages = Math.max(1, Math.round(totalWidth / pageWidth));
         updatePageInfo(contentEl);
     };
 
-    // 즉시 한 번 + iframe 로드마다 재계산
     requestAnimationFrame(doCalc);
-    iframes.forEach(iframe => {
+    // iframe이 로드되면 column이 늘어나므로 재계산
+    contentEl.querySelectorAll('.cn-regex-iframe').forEach(iframe => {
         iframe.addEventListener('load', () => {
-            setTimeout(doCalc, 100);
-            setTimeout(doCalc, 500);
+            setTimeout(doCalc, 200);
+            setTimeout(doCalc, 1000);
         });
     });
-    // 안전망 — 2초 후 최종 재계산
     setTimeout(doCalc, 2000);
+    setTimeout(doCalc, 5000);
 }
 
 /**
@@ -781,9 +780,9 @@ function disablePageMode(contentEl) {
     contentEl.style.removeProperty('column-width');
     contentEl.style.removeProperty('column-gap');
     contentEl.style.removeProperty('column-fill');
-    contentEl.style.removeProperty('overflow');
-    contentEl.style.removeProperty('transform');
-    contentEl.style.paddingBottom = '';
+    contentEl.style.removeProperty('overflow-x');
+    contentEl.style.removeProperty('overflow-y');
+    contentEl.scrollLeft = 0;
 
     // 모드 버튼 아이콘 복귀
     const modeBtn = overlay.querySelector('.cn-footer-mode-btn');
@@ -809,11 +808,9 @@ function goToPage(contentEl, pageNum) {
     if (pageNum >= state.totalPages) pageNum = state.totalPages - 1;
 
     state.currentPage = pageNum;
-    const rect = contentEl.getBoundingClientRect();
-    const pageWidth = rect.width;
-    const offset = pageNum * pageWidth;
-
-    contentEl.style.transform = `translateX(-${offset}px)`;
+    const pageWidth = contentEl.getBoundingClientRect().width;
+    // scrollLeft 기반 — transform 쓰지 않음
+    contentEl.scrollLeft = pageNum * pageWidth;
     updatePageInfo(contentEl);
 }
 
@@ -866,7 +863,7 @@ function setupPageNavigation(contentEl) {
     };
     contentEl.addEventListener('click', state._pageClickHandler);
 
-    // 키보드 네비게이션
+    // 키보드 네비게이션 (document에 바인딩 — focus 잃어도 동작)
     state._pageKeyHandler = (e) => {
         if (!state.pageMode) return;
         if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') {
@@ -883,7 +880,7 @@ function setupPageNavigation(contentEl) {
             goToPage(contentEl, state.totalPages - 1);
         }
     };
-    contentEl.addEventListener('keydown', state._pageKeyHandler);
+    document.addEventListener('keydown', state._pageKeyHandler);
 
     // 터치 스와이프
     let touchStartX = 0;
@@ -917,7 +914,7 @@ function cleanupPageNavigation(contentEl) {
         state._pageClickHandler = null;
     }
     if (state._pageKeyHandler) {
-        contentEl.removeEventListener('keydown', state._pageKeyHandler);
+        document.removeEventListener('keydown', state._pageKeyHandler);
         state._pageKeyHandler = null;
     }
     if (state._pageTouchStart) {
