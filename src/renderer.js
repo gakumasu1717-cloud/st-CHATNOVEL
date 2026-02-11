@@ -597,8 +597,11 @@ export function renderChapter(chapter, options) {
 
         html += `<div class="cn-message ${roleClass}" data-msg-index="${msg._index}">`;
 
-        // 북마크 버튼
-        html += `<button class="cn-msg-bookmark-btn" title="북마크">📖</button>`;
+        // 버튼 바
+        html += `<div class="cn-msg-actions">`;
+        html += `<button class="cn-msg-goto-btn" title="실리태번 메시지로 이동">📨</button>`;
+        html += `<button class="cn-msg-bookmark-btn" title="북마크">🔖</button>`;
+        html += `</div>`;
 
         if (senderName && !msg.is_system && options.showSenderName !== false) {
             html += `<div class="cn-msg-sender">${escapeHtml(senderName)}</div>`;
