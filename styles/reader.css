@@ -459,8 +459,7 @@ body.cn-reader-open {
     }
 }
 
-.cn-msg-bookmark-btn,
-.cn-msg-goto-btn {
+.cn-msg-bookmark-btn {
     background: none;
     border: none;
     font-size: 16px;
@@ -471,8 +470,7 @@ body.cn-reader-open {
     transition: opacity 0.15s;
 }
 
-.cn-msg-bookmark-btn:hover,
-.cn-msg-goto-btn:hover {
+.cn-msg-bookmark-btn:hover {
     opacity: 1;
 }
 

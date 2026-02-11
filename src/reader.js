@@ -206,30 +206,6 @@ export function closeReader() {
 }
 
 /**
- * 실리태번 메시지로 이동 — 리더를 닫고 해당 메시지로 스크롤.
- * @param {number} msgIndex - context.chat 배열 내 인덱스
- */
-function jumpToSillyTavernMessage(msgIndex) {
-    closeReader();
-
-    // 리더가 닫힌 후 ST 메시지로 스크롤
-    setTimeout(() => {
-        const mesEl = document.querySelector(`#chat .mes[mesid="${msgIndex}"]`);
-        if (mesEl) {
-            mesEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            // 잠깐 하이라이트
-            mesEl.style.transition = 'outline 0.3s';
-            mesEl.style.outline = '2px solid rgba(124, 111, 250, 0.8)';
-            mesEl.style.outlineOffset = '2px';
-            setTimeout(() => {
-                mesEl.style.outline = '';
-                mesEl.style.outlineOffset = '';
-            }, 2000);
-        }
-    }, 400);
-}
-
-/**
  * Create the overlay shell (header, empty content, footer, event bindings).
  * Does NOT parse or render content — that's deferred to loadContent().
  * @param {Object} settings
@@ -1054,19 +1030,6 @@ function setupBookmarkContextMenu(contentEl) {
 
         const rect = btn.getBoundingClientRect();
         showBookmarkMenu(msgEl, rect.left, rect.bottom);
-    });
-
-    // 실리태번 메시지로 이동 버튼 클릭
-    contentEl.addEventListener('click', (e) => {
-        const btn = e.target.closest('.cn-msg-goto-btn');
-        if (!btn) return;
-        e.stopPropagation();
-
-        const msgEl = btn.closest('.cn-message[data-msg-index]');
-        if (!msgEl) return;
-
-        const msgIndex = parseInt(msgEl.dataset.msgIndex, 10);
-        jumpToSillyTavernMessage(msgIndex);
     });
 
     // 롱프레스 (모바일)

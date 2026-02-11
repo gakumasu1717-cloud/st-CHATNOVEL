@@ -627,7 +627,6 @@ export function renderChapter(chapter, options) {
 
         // 버튼 바
         html += `<div class="cn-msg-actions">`;
-        html += `<button class="cn-msg-goto-btn" title="실리태번 메시지로 이동">📨</button>`;
         html += `<button class="cn-msg-bookmark-btn" title="북마크">🔖</button>`;
         html += `</div>`;
 
