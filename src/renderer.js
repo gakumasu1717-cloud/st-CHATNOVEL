@@ -86,7 +86,7 @@ function convertHtmlDocsToIframes(text) {
     const htmlDocPattern = /\[?\s*(?:<!DOCTYPE\s+html[^>]*>[\s\S]*?<\/html>|<html[^>]*>[\s\S]*?<\/html>)\s*\]?/gi;
 
     // iframe 내부에 주입할 CSS + 높이 통신 스크립트
-    const iframeOverrideCSS = '<style>html,body{height:auto!important;min-height:0!important;margin:0!important;padding:0!important;overflow:hidden!important;background:transparent;}#cn-wrap{display:inline-block;width:100%;position:relative;}::-webkit-scrollbar{display:none!important;}</style>';
+    const iframeOverrideCSS = '<style>html,body{height:auto!important;min-height:0!important;margin:0!important;padding:0!important;overflow:hidden!important;background:transparent;}#cn-wrap{position:absolute;top:0;left:0;width:100%;}::-webkit-scrollbar{display:none!important;}</style>';
     // body 내용을 #cn-wrap으로 감싸는 스크립트 + 높이 측정
     const iframeResizeScript = `<script>
 (function(){
@@ -101,20 +101,28 @@ function convertHtmlDocsToIframes(text) {
   function init(){
     var w=document.getElementById('cn-wrap');
     if(!w)return;
+    var busy=false;
     function sendH(){
-      var h=w.offsetHeight+4;
-      window.parent.postMessage({type:'cn-iframe-resize',height:h},'*');
+      if(busy)return;
+      busy=true;
+      requestAnimationFrame(function(){
+        var h=w.offsetHeight;
+        if(h>0){
+          window.parent.postMessage({type:'cn-iframe-resize',height:h},'*');
+        }
+        busy=false;
+      });
     }
     sendH();
     document.querySelectorAll('details').forEach(function(d){
       d.addEventListener('toggle',function(){
-        setTimeout(sendH,10);
+        sendH();
         setTimeout(sendH,50);
-        setTimeout(sendH,200);
-        setTimeout(sendH,500);
+        setTimeout(sendH,150);
+        setTimeout(sendH,400);
       });
     });
-    new MutationObserver(function(){requestAnimationFrame(sendH);}).observe(w,{childList:true,subtree:true,attributes:true});
+    new MutationObserver(function(){sendH();}).observe(w,{childList:true,subtree:true,attributes:true});
     var t=[100,300,600,1500,3000,8000];t.forEach(function(d){setTimeout(sendH,d);});
   }
 })();

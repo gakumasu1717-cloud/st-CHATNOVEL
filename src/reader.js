@@ -537,11 +537,7 @@ function setupSingleIframe(iframe) {
         if (e.source !== iframe.contentWindow) return;
         if (e.data?.type === 'cn-iframe-resize' && typeof e.data.height === 'number') {
             const h = Math.ceil(e.data.height);
-            const cur = parseInt(iframe.style.height) || 0;
-            // 2px 이상 차이날 때만 업데이트 (피드백 루프 방지)
-            if (Math.abs(cur - h) > 2) {
-                iframe.style.height = (h > 20 ? h : 400) + 'px';
-            }
+            iframe.style.height = (h > 20 ? h : 400) + 'px';
         }
     };
     window.addEventListener('message', messageHandler);
