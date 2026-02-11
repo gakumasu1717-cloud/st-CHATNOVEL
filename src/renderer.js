@@ -82,7 +82,8 @@ function convertHtmlDocsToIframes(text) {
     const iframePlaceholders = [];
     if (!text) return { text, iframePlaceholders };
 
-    const htmlDocPattern = /(?:<!DOCTYPE\s+html[^>]*>[\s\S]*?<\/html>|<html[^>]*>[\s\S]*?<\/html>)/gi;
+    // 정규식 스크립트가 HTML을 [...]로 감싸는 경우가 있으므로 앞뒤 대괄호도 함께 소비
+    const htmlDocPattern = /\[?\s*(?:<!DOCTYPE\s+html[^>]*>[\s\S]*?<\/html>|<html[^>]*>[\s\S]*?<\/html>)\s*\]?/gi;
 
     // iframe 내부에 주입할 스크롤바 제거 + 오버플로우 방지 CSS
     const iframeOverrideCSS = '<style>html,body{overflow:hidden!important;margin:0;padding:0;}body{min-height:auto!important;}</style>';
@@ -144,14 +145,11 @@ function removeCursorMarkers(text) {
     //    - 단독 줄의 | (파이프) 문자 — 블록 시작/끝 표시
     text = text.replace(/^\s*\|\s*$/gm, '');
 
-    // 2. 단독 줄의 괄호 잔여물 — 정규식 스크립트가 HTML을 감쌀 때 남는 [ ] { }
-    text = text.replace(/^\s*[\[\]{}]\s*$/gm, '');
-
-    // 3. <cursor> 또는 {{cursor}} 매크로 잔여물
+    // 2. <cursor> 또는 {{cursor}} 매크로 잔여물
     text = text.replace(/<cursor\s*\/?>/gi, '');
     text = text.replace(/\{\{cursor\}\}/gi, '');
 
-    // 4. 빈 줄 정리 — 연속 3개 이상의 빈 줄을 2개로 축소
+    // 3. 빈 줄 정리 — 연속 3개 이상의 빈 줄을 2개로 축소
     text = text.replace(/\n{3,}/g, '\n\n');
 
     return text;
