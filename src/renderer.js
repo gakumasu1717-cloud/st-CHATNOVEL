@@ -144,11 +144,14 @@ function removeCursorMarkers(text) {
     //    - 단독 줄의 | (파이프) 문자 — 블록 시작/끝 표시
     text = text.replace(/^\s*\|\s*$/gm, '');
 
-    // 2. <cursor> 또는 {{cursor}} 매크로 잔여물
+    // 2. 단독 줄의 괄호 잔여물 — 정규식 스크립트가 HTML을 감쌀 때 남는 [ ] { }
+    text = text.replace(/^\s*[\[\]{}]\s*$/gm, '');
+
+    // 3. <cursor> 또는 {{cursor}} 매크로 잔여물
     text = text.replace(/<cursor\s*\/?>/gi, '');
     text = text.replace(/\{\{cursor\}\}/gi, '');
 
-    // 3. 빈 줄 정리 — 연속 3개 이상의 빈 줄을 2개로 축소
+    // 4. 빈 줄 정리 — 연속 3개 이상의 빈 줄을 2개로 축소
     text = text.replace(/\n{3,}/g, '\n\n');
 
     return text;
