@@ -86,7 +86,7 @@ function convertHtmlDocsToIframes(text) {
     const htmlDocPattern = /\[?\s*(?:<!DOCTYPE\s+html[^>]*>[\s\S]*?<\/html>|<html[^>]*>[\s\S]*?<\/html>)\s*\]?/gi;
 
     // iframe 내부에 주입할 CSS + 높이 통신 스크립트
-    const iframeOverrideCSS = '<style>html,body{height:auto!important;min-height:0!important;margin:0!important;padding:0!important;overflow:hidden!important;background:transparent;}#cn-wrap{position:absolute;top:0;left:0;width:100%;}::-webkit-scrollbar{display:none!important;}</style>';
+    const iframeOverrideCSS = '<style>html{overflow:hidden!important;margin:0!important;padding:0!important;scrollbar-width:none!important;}body{margin:0!important;padding:0!important;overflow:visible!important;height:auto!important;min-height:0!important;background:transparent;}::-webkit-scrollbar{display:none!important;}</style>';
     // body 내용을 #cn-wrap으로 감싸는 스크립트 + 높이 측정
     const iframeResizeScript = `<script>
 (function(){
@@ -106,7 +106,7 @@ function convertHtmlDocsToIframes(text) {
       if(busy)return;
       busy=true;
       requestAnimationFrame(function(){
-        var h=w.offsetHeight;
+        var h=w.getBoundingClientRect().height;
         if(h>0){
           window.parent.postMessage({type:'cn-iframe-resize',height:h},'*');
         }
