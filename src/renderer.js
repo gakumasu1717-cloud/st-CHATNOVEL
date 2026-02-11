@@ -85,8 +85,8 @@ function convertHtmlDocsToIframes(text) {
     // 정규식 스크립트가 HTML을 [...]로 감싸는 경우가 있으므로 앞뒤 대괄호도 함께 소비
     const htmlDocPattern = /\[?\s*(?:<!DOCTYPE\s+html[^>]*>[\s\S]*?<\/html>|<html[^>]*>[\s\S]*?<\/html>)\s*\]?/gi;
 
-    // iframe 내부에 주입할 스크롤바 제거 + 오버플로우 방지 CSS
-    const iframeOverrideCSS = '<style>html,body{overflow:hidden!important;margin:0;padding:0;}body{min-height:auto!important;}</style>';
+    // iframe 내부에 주입할 최소한의 CSS — 수평 스크롤만 방지, 내부 레이아웃은 건드리지 않음
+    const iframeOverrideCSS = '<style>html{overflow-x:hidden!important;}::-webkit-scrollbar{display:none!important;}</style>';
 
     const processed = text.replace(htmlDocPattern, (match) => {
         // </head> 바로 앞에 override CSS를 주입

@@ -459,11 +459,7 @@ function setupSingleIframe(iframe) {
             // Shrink to 1px so scrollHeight reflects natural content height
             iframe.style.height = '1px';
 
-            // Prevent internal scrollbars
-            iframeDoc.body.style.overflow = 'hidden';
-            iframeDoc.body.style.margin = '0';
-            iframeDoc.documentElement.style.overflow = 'hidden';
-
+            // 내부 스타일을 건드리지 않고 높이만 측정
             const bodyH = iframeDoc.body.scrollHeight || 0;
             const docH = iframeDoc.documentElement.scrollHeight || 0;
             const h = Math.max(bodyH, docH);
