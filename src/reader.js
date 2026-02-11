@@ -548,8 +548,6 @@ function setupSingleIframe(iframe) {
 
     // 안전망: load 이벤트로도 기본 높이 설정
     iframe.addEventListener('load', () => {
-        // sandbox=allow-scripts 만으로는 contentDocument 접근 불가
-        // postMessage로부터 높이를 받지 못한 경우 fallback
         setTimeout(() => {
             if (iframe.style.height === '' || iframe.style.height === '0px') {
                 iframe.style.height = '400px';
@@ -557,10 +555,16 @@ function setupSingleIframe(iframe) {
         }, 2000);
     });
 
-    // cleanup: observer를 30초 후 제거 (30초 동안 resize 수신)
-    setTimeout(() => {
-        window.removeEventListener('message', messageHandler);
-    }, 30000);
+    // cleanup: 리더가 닫힌 후 정리 (MutationObserver로 iframe 제거 감지)
+    const cleanupObserver = new MutationObserver(() => {
+        if (!iframe.isConnected) {
+            window.removeEventListener('message', messageHandler);
+            cleanupObserver.disconnect();
+        }
+    });
+    if (iframe.parentNode) {
+        cleanupObserver.observe(iframe.parentNode, { childList: true });
+    }
 }
 
 /**

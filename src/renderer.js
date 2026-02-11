@@ -86,23 +86,34 @@ function convertHtmlDocsToIframes(text) {
     const htmlDocPattern = /\[?\s*(?:<!DOCTYPE\s+html[^>]*>[\s\S]*?<\/html>|<html[^>]*>[\s\S]*?<\/html>)\s*\]?/gi;
 
     // iframe 내부에 주입할 CSS + 높이 통신 스크립트
-    const iframeOverrideCSS = '<style>html,body{margin:0!important;padding:0!important;overflow:hidden!important;height:auto!important;}::-webkit-scrollbar{display:none!important;}</style>';
+    const iframeOverrideCSS = '<style>html{overflow:hidden!important;margin:0!important;padding:0!important;}body{margin:0!important;padding:0!important;overflow:visible!important;height:auto!important;}::-webkit-scrollbar{display:none!important;}</style>';
     const iframeResizeScript = `<script>
 (function(){
   var lastH=0;
   function sendH(){
-    var h=document.body.getBoundingClientRect().height;
+    var h=Math.max(
+      document.body.scrollHeight||0,
+      document.body.offsetHeight||0,
+      document.body.getBoundingClientRect().height||0
+    );
     if(Math.abs(lastH-h)>2){
       lastH=h;
       window.parent.postMessage({type:'cn-iframe-resize',height:h},'*');
     }
   }
   window.addEventListener('load',sendH);
-  document.querySelectorAll('details').forEach(function(d){
-    d.addEventListener('toggle',function(){setTimeout(sendH,20);});
+  document.addEventListener('DOMContentLoaded',function(){
+    document.querySelectorAll('details').forEach(function(d){
+      d.addEventListener('toggle',function(){
+        setTimeout(sendH,10);
+        setTimeout(sendH,50);
+        setTimeout(sendH,200);
+        setTimeout(sendH,500);
+      });
+    });
   });
-  new MutationObserver(function(){requestAnimationFrame(sendH);}).observe(document.body,{childList:true,subtree:true,attributes:true});
-  var t=[100,300,600,1500,3000];t.forEach(function(d){setTimeout(sendH,d);});
+  new MutationObserver(function(){requestAnimationFrame(sendH);}).observe(document.documentElement,{childList:true,subtree:true,attributes:true});
+  var t=[100,300,600,1500,3000,8000];t.forEach(function(d){setTimeout(sendH,d);});
 })();
 <\/script>`;
 
