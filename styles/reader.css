@@ -452,6 +452,13 @@ body.cn-reader-open {
     opacity: 0.6;
 }
 
+/* 모바일: 터치 디바이스에서는 항상 표시 */
+@media (hover: none), (max-width: 768px) {
+    .cn-msg-actions {
+        opacity: 0.4;
+    }
+}
+
 .cn-msg-bookmark-btn,
 .cn-msg-goto-btn {
     background: none;
@@ -477,7 +484,8 @@ body.cn-reader-open {
     border: 1px solid var(--cn-card-border);
     border-radius: 6px;
     padding: 4px 0;
-    min-width: 160px;
+    min-width: 140px;
+    max-width: calc(100vw - 16px);
     box-shadow: 0 4px 16px rgba(0,0,0,0.4);
 }
 

@@ -538,6 +538,14 @@ function setupSingleIframe(iframe) {
         if (e.data?.type === 'cn-iframe-resize' && typeof e.data.height === 'number') {
             const h = Math.ceil(e.data.height);
             iframe.style.height = (h > 20 ? h : 400) + 'px';
+
+            // 페이지 모드에서 iframe 높이 변경 시 레이아웃 재계산
+            if (state.pageMode) {
+                const contentEl = state.overlay?.querySelector('.cn-content');
+                if (contentEl) {
+                    recalcPageLayout(contentEl);
+                }
+            }
         }
     };
     window.addEventListener('message', messageHandler);
@@ -1097,6 +1105,19 @@ function showBookmarkMenu(msgEl, x, y) {
     }
 
     state.overlay.appendChild(menu);
+
+    // 화면 밖으로 나가지 않도록 위치 보정
+    requestAnimationFrame(() => {
+        const menuRect = menu.getBoundingClientRect();
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        if (menuRect.right > vw) {
+            menu.style.left = Math.max(4, vw - menuRect.width - 4) + 'px';
+        }
+        if (menuRect.bottom > vh) {
+            menu.style.top = Math.max(4, vh - menuRect.height - 4) + 'px';
+        }
+    });
 
     // Close on click outside
     const close = (ev) => {
