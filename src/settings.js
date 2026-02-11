@@ -7,7 +7,7 @@ const MODULE_NAME = 'chat_novel';
 
 const DEFAULT_SETTINGS = Object.freeze({
     // Theme
-    theme: 'ridi-dark',
+    theme: 'dark-noble',
 
     // Typography
     fontSize: 16,
@@ -57,10 +57,10 @@ export function loadSettings() {
     }
 
     // Theme migration: old theme names that no longer exist
-    const validThemes = ['ridi-light', 'ridi-dark', 'kakao-light', 'kakao-dark', 'warm-paper', 'midnight'];
+    const validThemes = ['dark-noble', 'light-classic', 'sepia-vintage', 'midnight-blue'];
     if (extensionSettings[MODULE_NAME].theme && !validThemes.includes(extensionSettings[MODULE_NAME].theme)) {
-        console.warn(`[ChatNovel] Migrating unknown theme '${extensionSettings[MODULE_NAME].theme}' to 'ridi-dark'`);
-        extensionSettings[MODULE_NAME].theme = 'ridi-dark';
+        console.warn(`[ChatNovel] Migrating unknown theme '${extensionSettings[MODULE_NAME].theme}' to 'dark-noble'`);
+        extensionSettings[MODULE_NAME].theme = 'dark-noble';
     }
 
     return extensionSettings[MODULE_NAME];

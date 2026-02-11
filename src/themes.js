@@ -117,8 +117,8 @@ export const THEMES = {
 export function applyTheme(container, themeId) {
     let theme = THEMES[themeId];
     if (!theme) {
-        console.warn(`[ChatNovel] Unknown theme: ${themeId}, falling back to ridi-dark`);
-        themeId = 'ridi-dark';
+        console.warn(`[ChatNovel] Unknown theme: ${themeId}, falling back to dark-noble`);
+        themeId = 'dark-noble';
         theme = THEMES[themeId];
     }
 
