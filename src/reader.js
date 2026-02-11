@@ -357,9 +357,9 @@ function loadContent(settings, userName, characterName) {
                 if (state.pageMode) {
                     // Find which page contains this message
                     const rect = contentEl.getBoundingClientRect();
-                    const pageUnit = rect.width * 2;
+                    const pageWidth = rect.width;
                     const msgLeft = msgEl.offsetLeft;
-                    const page = Math.floor(msgLeft / pageUnit);
+                    const page = Math.floor(msgLeft / pageWidth);
                     goToPage(contentEl, page);
                 } else {
                     msgEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -737,10 +737,12 @@ function recalcPageLayout(contentEl) {
     const pageWidth = rect.width;
     const pageHeight = rect.height;
 
+    // CSS columns 대신 수평 스크롤 기반 페이지네이션
+    // 콘텐츠를 고정 높이로 잡고, overflow hidden + column 레이아웃 사용
     contentEl.style.overflow = 'hidden';
     contentEl.style.height = pageHeight + 'px';
     contentEl.style.columnWidth = pageWidth + 'px';
-    contentEl.style.columnGap = pageWidth + 'px';
+    contentEl.style.columnGap = '0px';
     contentEl.style.columnFill = 'auto';
     contentEl.style.paddingBottom = '0';
 
@@ -748,8 +750,8 @@ function recalcPageLayout(contentEl) {
     const iframes = contentEl.querySelectorAll('.cn-regex-iframe');
     const doCalc = () => {
         const totalWidth = contentEl.scrollWidth;
-        const pageUnit = pageWidth * 2; // column + gap
-        state.totalPages = Math.max(1, Math.ceil(totalWidth / pageUnit));
+        // column-gap이 0이므로 pageUnit = pageWidth
+        state.totalPages = Math.max(1, Math.ceil(totalWidth / pageWidth));
         updatePageInfo(contentEl);
     };
 
@@ -808,8 +810,8 @@ function goToPage(contentEl, pageNum) {
 
     state.currentPage = pageNum;
     const rect = contentEl.getBoundingClientRect();
-    const pageUnit = rect.width * 2; // column + gap
-    const offset = pageNum * pageUnit;
+    const pageWidth = rect.width;
+    const offset = pageNum * pageWidth;
 
     contentEl.style.transform = `translateX(-${offset}px)`;
     updatePageInfo(contentEl);
