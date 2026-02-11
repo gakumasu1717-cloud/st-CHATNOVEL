@@ -562,7 +562,7 @@ body.cn-reader-open {
 .cn-paragraph {
     /* p 태그 간격을 line-height에 연동 — 행간 줄이면 문단 간격도 같이 줄어듦 */
     margin-top: 0;
-    margin-bottom: calc((var(--cn-line-height) - 1) * 0.5em);
+    margin-bottom: calc((var(--cn-line-height) - 1) * 0.25em);
 }
 
 .cn-msg-highlight {

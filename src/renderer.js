@@ -85,8 +85,20 @@ function convertHtmlDocsToIframes(text) {
     // 정규식 스크립트가 HTML을 [...]로 감싸는 경우가 있으므로 앞뒤 대괄호도 함께 소비
     const htmlDocPattern = /\[?\s*(?:<!DOCTYPE\s+html[^>]*>[\s\S]*?<\/html>|<html[^>]*>[\s\S]*?<\/html>)\s*\]?/gi;
 
-    // iframe 내부에 주입할 최소한의 CSS — 수평 스크롤만 방지, 내부 레이아웃은 건드리지 않음
+    // iframe 내부에 주입할 CSS + 높이 통신 스크립트
     const iframeOverrideCSS = '<style>html{overflow-x:hidden!important;}::-webkit-scrollbar{display:none!important;}</style>';
+    const iframeResizeScript = `<script>
+(function(){
+  function sendH(){
+    var h=Math.max(document.body.scrollHeight||0,document.documentElement.scrollHeight||0);
+    window.parent.postMessage({type:'cn-iframe-resize',height:h},'*');
+  }
+  if(document.readyState==='complete')sendH();
+  else window.addEventListener('load',sendH);
+  new MutationObserver(sendH).observe(document.body,{childList:true,subtree:true,attributes:true});
+  var t=[100,300,600,1500,3000];t.forEach(function(d){setTimeout(sendH,d);});
+})();
+<\/script>`;
 
     const processed = text.replace(htmlDocPattern, (match) => {
         // 앞뒤 [ ] 래핑 제거 (정규식으로 이미 소비했지만 match에 포함됨)
@@ -101,10 +113,17 @@ function convertHtmlDocsToIframes(text) {
             modified = iframeOverrideCSS + modified;
         }
 
+        // </body> 앞에 높이 통신 스크립트 주입
+        if (modified.includes('</body>')) {
+            modified = modified.replace('</body>', iframeResizeScript + '</body>');
+        } else {
+            modified += iframeResizeScript;
+        }
+
         // Base64 인코딩 — srcdoc 따옴표 충돌 완전 회피
         const b64 = btoa(unescape(encodeURIComponent(modified)));
 
-        const iframe = `<iframe class="cn-regex-iframe" data-cn-html="${b64}" sandbox="allow-scripts allow-same-origin" frameborder="0" scrolling="no" style="width:100%;border:none;overflow:hidden;"></iframe>`;
+        const iframe = `<iframe class="cn-regex-iframe" data-cn-html="${b64}" sandbox="allow-scripts" frameborder="0" scrolling="no" style="width:100%;border:none;overflow:hidden;"></iframe>`;
         const index = iframePlaceholders.length;
         iframePlaceholders.push(iframe);
         return `\n%%%CN_IFRAME_${index}%%%\n`;

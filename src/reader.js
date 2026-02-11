@@ -496,94 +496,43 @@ function setupSingleIframe(iframe) {
     // Disable scrolling via HTML attribute
     iframe.setAttribute('scrolling', 'no');
 
-    // Base64로 저장된 HTML을 contentDocument.write()로 주입
+    // Base64로 저장된 HTML을 srcdoc로 주입 (sandbox=allow-scripts만 사용시 contentDocument 접근 불가)
     const b64 = iframe.getAttribute('data-cn-html');
     if (b64) {
         iframe.removeAttribute('data-cn-html');
         try {
             const html = decodeURIComponent(escape(atob(b64)));
-            // sandbox 속성은 HTML attribute로 이미 설정됨
-            // contentDocument.write 사용을 위해 잠시 srcdoc 비우기
-            const doc = iframe.contentDocument || iframe.contentWindow?.document;
-            if (doc) {
-                doc.open();
-                doc.write(html);
-                doc.close();
-            }
+            iframe.srcdoc = html;
         } catch (e) {
-            console.warn('[ChatNovel] iframe write failed, fallback to srcdoc:', e);
-            // fallback: srcdoc에 직접 넣기
-            try {
-                const html = decodeURIComponent(escape(atob(b64)));
-                iframe.srcdoc = html;
-            } catch (_) { /* give up */ }
+            console.warn('[ChatNovel] iframe srcdoc set failed:', e);
         }
     }
 
-    const resize = () => {
-        try {
-            const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
-            if (!iframeDoc || !iframeDoc.body) return;
-
-            // Shrink to 1px so scrollHeight reflects natural content height
-            iframe.style.height = '1px';
-
-            // 내부 스타일을 건드리지 않고 높이만 측정
-            const bodyH = iframeDoc.body.scrollHeight || 0;
-            const docH = iframeDoc.documentElement.scrollHeight || 0;
-            const h = Math.max(bodyH, docH);
-
-            // +2px 여유 — 소수점 반올림 오차로 스크롤바 생기는 것 방지
+    // postMessage 기반 높이 조절 — iframe 내부 스크립트가 높이를 보냄
+    const messageHandler = (e) => {
+        if (e.source !== iframe.contentWindow) return;
+        if (e.data?.type === 'cn-iframe-resize' && typeof e.data.height === 'number') {
+            const h = e.data.height;
             iframe.style.height = (h > 20 ? h + 2 : 400) + 'px';
-        } catch (e) {
-            console.warn('[ChatNovel] iframe resize failed:', e);
-            iframe.style.height = '400px';
         }
     };
+    window.addEventListener('message', messageHandler);
 
-    // ResizeObserver 부착 (한 번만)
-    const tryObserve = () => {
-        try {
-            const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
-            if (iframeDoc?.body && window.ResizeObserver && !iframe._cnObserved) {
-                iframe._cnObserved = true;
-                const ro = new ResizeObserver(() => resize());
-                ro.observe(iframeDoc.body);
-                if (iframeDoc.documentElement) ro.observe(iframeDoc.documentElement);
-                setTimeout(() => ro.disconnect(), 30000);
-            }
-        } catch (_) { /* cross-origin */ }
-    };
-
-    // MutationObserver — 내부 JS가 DOM을 동적으로 빌드하는 경우
-    const tryMutationObserve = () => {
-        try {
-            const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
-            if (iframeDoc?.body && !iframe._cnMoObserved) {
-                iframe._cnMoObserved = true;
-                const mo = new MutationObserver(() => resize());
-                mo.observe(iframeDoc.body, { childList: true, subtree: true, attributes: true });
-                setTimeout(() => mo.disconnect(), 15000);
-            }
-        } catch (_) { /* cross-origin */ }
-    };
-
-    // load 이벤트 백업
+    // 안전망: load 이벤트로도 기본 높이 설정
     iframe.addEventListener('load', () => {
-        resize();
-        tryObserve();
-        tryMutationObserve();
+        // sandbox=allow-scripts 만으로는 contentDocument 접근 불가
+        // postMessage로부터 높이를 받지 못한 경우 fallback
+        setTimeout(() => {
+            if (iframe.style.height === '' || iframe.style.height === '0px') {
+                iframe.style.height = '400px';
+            }
+        }, 2000);
     });
 
-    // 공격적 재시도 — srcdoc는 동기적으로 load할 수 있음
-    const delays = [0, 50, 100, 200, 500, 1000, 2000, 4000];
-    delays.forEach(d => {
-        if (d === 0) {
-            resize(); tryObserve(); tryMutationObserve();
-        } else {
-            setTimeout(() => { resize(); tryObserve(); tryMutationObserve(); }, d);
-        }
-    });
+    // cleanup: observer를 30초 후 제거 (30초 동안 resize 수신)
+    setTimeout(() => {
+        window.removeEventListener('message', messageHandler);
+    }, 30000);
 }
 
 /**
