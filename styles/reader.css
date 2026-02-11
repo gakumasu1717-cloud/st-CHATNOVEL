@@ -428,6 +428,34 @@ body.cn-reader-open {
     color: #f44;
 }
 
+/* ===== Bookmark Button ===== */
+.cn-msg-bookmark-btn {
+    position: absolute;
+    right: 2px;
+    top: 2px;
+    background: none;
+    border: none;
+    font-size: 11px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.2s;
+    padding: 2px 4px;
+    z-index: 10;
+    line-height: 1;
+}
+
+.cn-message:hover .cn-msg-bookmark-btn {
+    opacity: 0.4;
+}
+
+.cn-msg-bookmark-btn:hover {
+    opacity: 1 !important;
+}
+
+.cn-message.cn-bookmarked .cn-msg-bookmark-btn {
+    opacity: 0.7;
+}
+
 /* ===== Context Menu ===== */
 .cn-context-menu {
     position: fixed;
@@ -456,15 +484,6 @@ body.cn-reader-open {
 .cn-message.cn-bookmarked {
     border-left: 3px solid var(--cn-sidebar-active, #7c6ffa);
     padding-left: 12px;
-}
-
-.cn-message.cn-bookmarked::before {
-    content: '🔖';
-    position: absolute;
-    right: 8px;
-    top: 4px;
-    font-size: 12px;
-    opacity: 0.5;
 }
 
 /* ===== Main Content ===== */
@@ -524,7 +543,7 @@ body.cn-reader-open {
 /* ===== Messages ===== */
 .cn-message {
     position: relative;
-    margin-bottom: 20px;
+    margin-bottom: 6px;
     animation: cn-fadeIn 0.3s ease;
 }
 
@@ -1147,23 +1166,19 @@ body.cn-reader-open {
 
 /* 페이지 모드에서 이미지가 페이지를 넘지 않도록 */
 .cn-page-mode .cn-content img {
-    max-height: 80vh;
+    max-height: 60vh;
+    max-width: 90%;
     object-fit: contain;
-    break-inside: avoid;
 }
 
-/* 페이지 모드에서 챕터/메시지 분할 방지 */
+/* 페이지 모드에서 챕터 제목만 분할 방지 (메시지는 글자 단위로 넘김) */
 .cn-page-mode .cn-chapter-title {
     break-after: avoid;
 }
 
-.cn-page-mode .cn-message {
-    break-inside: avoid-column;
-}
-
-/* 페이지 모드에서 iframe도 분할 방지 */
+/* 페이지 모드에서 iframe 크기 제한 */
 .cn-page-mode .cn-regex-iframe {
-    break-inside: avoid-column;
+    max-height: 70vh;
 }
 
 /* ===== Print Styles ===== */

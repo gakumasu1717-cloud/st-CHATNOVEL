@@ -512,8 +512,12 @@ function setupSingleIframe(iframe) {
     const messageHandler = (e) => {
         if (e.source !== iframe.contentWindow) return;
         if (e.data?.type === 'cn-iframe-resize' && typeof e.data.height === 'number') {
-            const h = e.data.height;
-            iframe.style.height = (h > 20 ? h + 2 : 400) + 'px';
+            const h = Math.ceil(e.data.height);
+            const cur = parseInt(iframe.style.height) || 0;
+            // 2px 이상 차이날 때만 업데이트 (피드백 루프 방지)
+            if (Math.abs(cur - h) > 2) {
+                iframe.style.height = (h > 20 ? h : 400) + 'px';
+            }
         }
     };
     window.addEventListener('message', messageHandler);
@@ -937,74 +941,50 @@ function cleanupPageNavigation(contentEl) {
  * @param {HTMLElement} contentEl
  */
 function setupBookmarkContextMenu(contentEl) {
+    // 우클릭 컨텍스트 메뉴
     contentEl.addEventListener('contextmenu', (e) => {
         const msgEl = e.target.closest('.cn-message[data-msg-index]');
         if (!msgEl) return;
 
         e.preventDefault();
-
-        // Remove any existing context menu
-        const existing = state.overlay.querySelector('.cn-context-menu');
-        if (existing) existing.remove();
-
-        const msgIndex = parseInt(msgEl.dataset.msgIndex, 10);
-        const existingBm = getBookmarks(state.chatId).find(b => b.msgIndex === msgIndex);
-
-        const menu = document.createElement('div');
-        menu.className = 'cn-context-menu';
-        menu.style.left = `${e.clientX}px`;
-        menu.style.top = `${e.clientY}px`;
-
-        if (existingBm) {
-            menu.innerHTML = `
-                <div class="cn-context-item cn-context-remove-bm">🔖 북마크 삭제</div>
-                <div class="cn-context-item cn-context-rename-bm">✏️ 북마크 이름 변경</div>
-            `;
-            menu.querySelector('.cn-context-remove-bm').addEventListener('click', () => {
-                removeBookmark(state.chatId, msgIndex);
-                msgEl.classList.remove('cn-bookmarked');
-                menu.remove();
-                // Update sidebar
-                refreshSidebar();
-            });
-            menu.querySelector('.cn-context-rename-bm').addEventListener('click', () => {
-                menu.remove();
-                const newLabel = prompt('북마크 이름:', existingBm.label || '');
-                if (newLabel != null) {
-                    addBookmark(state.chatId, msgIndex, newLabel);
-                    refreshSidebar();
-                }
-            });
-        } else {
-            // Extract preview text (first 30 chars of message body)
-            const bodyEl = msgEl.querySelector('.cn-msg-body');
-            const previewText = (bodyEl?.textContent || '').substring(0, 40).trim() || `메시지 #${msgIndex}`;
-
-            menu.innerHTML = `
-                <div class="cn-context-item cn-context-add-bm">🔖 북마크 추가</div>
-            `;
-            menu.querySelector('.cn-context-add-bm').addEventListener('click', () => {
-                menu.remove();
-                const label = prompt('북마크 이름:', previewText);
-                if (label != null) {
-                    addBookmark(state.chatId, msgIndex, label || previewText);
-                    msgEl.classList.add('cn-bookmarked');
-                    refreshSidebar();
-                }
-            });
-        }
-
-        state.overlay.appendChild(menu);
-
-        // Close on click outside
-        const close = (ev) => {
-            if (!menu.contains(ev.target)) {
-                menu.remove();
-                document.removeEventListener('click', close);
-            }
-        };
-        setTimeout(() => document.addEventListener('click', close), 0);
+        e.stopPropagation();
+        showBookmarkMenu(msgEl, e.clientX, e.clientY);
     });
+
+    // 북마크 버튼 클릭
+    contentEl.addEventListener('click', (e) => {
+        const btn = e.target.closest('.cn-msg-bookmark-btn');
+        if (!btn) return;
+        e.stopPropagation(); // 페이지 네비게이션 방지
+
+        const msgEl = btn.closest('.cn-message[data-msg-index]');
+        if (!msgEl) return;
+
+        const rect = btn.getBoundingClientRect();
+        showBookmarkMenu(msgEl, rect.left, rect.bottom);
+    });
+
+    // 롱프레스 (모바일)
+    let longPressTimer = null;
+    let longPressTarget = null;
+    contentEl.addEventListener('touchstart', (e) => {
+        const msgEl = e.target.closest('.cn-message[data-msg-index]');
+        if (!msgEl) return;
+        longPressTarget = msgEl;
+        longPressTimer = setTimeout(() => {
+            const touch = e.touches[0];
+            showBookmarkMenu(msgEl, touch.clientX, touch.clientY);
+            longPressTarget = null;
+        }, 600);
+    }, { passive: true });
+    contentEl.addEventListener('touchend', () => {
+        clearTimeout(longPressTimer);
+        longPressTarget = null;
+    }, { passive: true });
+    contentEl.addEventListener('touchmove', () => {
+        clearTimeout(longPressTimer);
+        longPressTarget = null;
+    }, { passive: true });
 
     // Mark already-bookmarked messages
     const bookmarks = getBookmarks(state.chatId);
@@ -1012,6 +992,74 @@ function setupBookmarkContextMenu(contentEl) {
         const el = contentEl.querySelector(`[data-msg-index="${bm.msgIndex}"]`);
         if (el) el.classList.add('cn-bookmarked');
     }
+}
+
+/**
+ * Show bookmark context menu for a specific message.
+ * @param {HTMLElement} msgEl
+ * @param {number} x
+ * @param {number} y
+ */
+function showBookmarkMenu(msgEl, x, y) {
+    // Remove any existing context menu
+    const existing = state.overlay.querySelector('.cn-context-menu');
+    if (existing) existing.remove();
+
+    const msgIndex = parseInt(msgEl.dataset.msgIndex, 10);
+    const existingBm = getBookmarks(state.chatId).find(b => b.msgIndex === msgIndex);
+
+    const menu = document.createElement('div');
+    menu.className = 'cn-context-menu';
+    menu.style.left = `${x}px`;
+    menu.style.top = `${y}px`;
+
+    if (existingBm) {
+        menu.innerHTML = `
+            <div class="cn-context-item cn-context-remove-bm">🔖 북마크 삭제</div>
+            <div class="cn-context-item cn-context-rename-bm">✏️ 북마크 이름 변경</div>
+        `;
+        menu.querySelector('.cn-context-remove-bm').addEventListener('click', () => {
+            removeBookmark(state.chatId, msgIndex);
+            msgEl.classList.remove('cn-bookmarked');
+            menu.remove();
+            refreshSidebar();
+        });
+        menu.querySelector('.cn-context-rename-bm').addEventListener('click', () => {
+            menu.remove();
+            const newLabel = prompt('북마크 이름:', existingBm.label || '');
+            if (newLabel != null) {
+                addBookmark(state.chatId, msgIndex, newLabel);
+                refreshSidebar();
+            }
+        });
+    } else {
+        const bodyEl = msgEl.querySelector('.cn-msg-body');
+        const previewText = (bodyEl?.textContent || '').substring(0, 40).trim() || `메시지 #${msgIndex}`;
+
+        menu.innerHTML = `
+            <div class="cn-context-item cn-context-add-bm">🔖 북마크 추가</div>
+        `;
+        menu.querySelector('.cn-context-add-bm').addEventListener('click', () => {
+            menu.remove();
+            const label = prompt('북마크 이름:', previewText);
+            if (label != null) {
+                addBookmark(state.chatId, msgIndex, label || previewText);
+                msgEl.classList.add('cn-bookmarked');
+                refreshSidebar();
+            }
+        });
+    }
+
+    state.overlay.appendChild(menu);
+
+    // Close on click outside
+    const close = (ev) => {
+        if (!menu.contains(ev.target)) {
+            menu.remove();
+            document.removeEventListener('click', close);
+        }
+    };
+    setTimeout(() => document.addEventListener('click', close), 0);
 }
 
 /**

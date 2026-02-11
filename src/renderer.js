@@ -86,16 +86,22 @@ function convertHtmlDocsToIframes(text) {
     const htmlDocPattern = /\[?\s*(?:<!DOCTYPE\s+html[^>]*>[\s\S]*?<\/html>|<html[^>]*>[\s\S]*?<\/html>)\s*\]?/gi;
 
     // iframe 내부에 주입할 CSS + 높이 통신 스크립트
-    const iframeOverrideCSS = '<style>html{overflow-x:hidden!important;}::-webkit-scrollbar{display:none!important;}</style>';
+    const iframeOverrideCSS = '<style>html,body{margin:0!important;padding:0!important;overflow:hidden!important;height:auto!important;}::-webkit-scrollbar{display:none!important;}</style>';
     const iframeResizeScript = `<script>
 (function(){
+  var lastH=0;
   function sendH(){
-    var h=Math.max(document.body.scrollHeight||0,document.documentElement.scrollHeight||0);
-    window.parent.postMessage({type:'cn-iframe-resize',height:h},'*');
+    var h=document.body.getBoundingClientRect().height;
+    if(Math.abs(lastH-h)>2){
+      lastH=h;
+      window.parent.postMessage({type:'cn-iframe-resize',height:h},'*');
+    }
   }
-  if(document.readyState==='complete')sendH();
-  else window.addEventListener('load',sendH);
-  new MutationObserver(sendH).observe(document.body,{childList:true,subtree:true,attributes:true});
+  window.addEventListener('load',sendH);
+  document.querySelectorAll('details').forEach(function(d){
+    d.addEventListener('toggle',function(){setTimeout(sendH,20);});
+  });
+  new MutationObserver(function(){requestAnimationFrame(sendH);}).observe(document.body,{childList:true,subtree:true,attributes:true});
   var t=[100,300,600,1500,3000];t.forEach(function(d){setTimeout(sendH,d);});
 })();
 <\/script>`;
@@ -590,6 +596,9 @@ export function renderChapter(chapter, options) {
         const senderName = msg.is_system ? '' : msg.name;
 
         html += `<div class="cn-message ${roleClass}" data-msg-index="${msg._index}">`;
+
+        // 북마크 버튼
+        html += `<button class="cn-msg-bookmark-btn" title="북마크">📖</button>`;
 
         if (senderName && !msg.is_system && options.showSenderName !== false) {
             html += `<div class="cn-msg-sender">${escapeHtml(senderName)}</div>`;
