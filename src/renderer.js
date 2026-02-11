@@ -107,10 +107,14 @@ function convertHtmlDocsToIframes(text) {
       timer=setTimeout(function(){
         timer=null;
         // shrink-to-measure: 높이를 0으로 줄인 후 scrollHeight로 콘텐츠 높이 측정
+        // overflow:auto로 BFC 생성 → margin collapse 방지 → 정확한 높이
         var orig=w.style.height;
+        var origOv=w.style.overflow;
+        w.style.overflow='auto';
         w.style.height='0';
         var h=w.scrollHeight;
         w.style.height=orig||'';
+        w.style.overflow=origOv||'';
         if(h>0){
           window.parent.postMessage({type:'cn-iframe-resize',height:h},'*');
         }
