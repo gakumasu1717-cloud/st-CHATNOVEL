@@ -1261,6 +1261,37 @@ body.cn-reader-open {
     background: transparent;
 }
 
+/* Kill code-block decorations around iframes — ST/markdown may wrap in pre>code */
+.cn-msg-body pre:has(.cn-regex-iframe),
+.cn-msg-body code:has(.cn-regex-iframe),
+.cn-msg-body .cn-code-block:has(.cn-regex-iframe) {
+    background: transparent !important;
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    font-family: inherit !important;
+    font-size: inherit !important;
+    white-space: normal !important;
+    overflow: visible !important;
+}
+
+.cn-msg-body pre:has(.cn-regex-iframe)::before,
+.cn-msg-body pre:has(.cn-regex-iframe)::after,
+.cn-msg-body code:has(.cn-regex-iframe)::before,
+.cn-msg-body code:has(.cn-regex-iframe)::after,
+.cn-msg-body .cn-code-block:has(.cn-regex-iframe)::before,
+.cn-msg-body .cn-code-block:has(.cn-regex-iframe)::after {
+    content: none !important;
+    display: none !important;
+}
+
+/* Also target direct parent wrappers generically */
+.cn-regex-iframe + .code-copy-btn,
+.cn-msg-body .code-copy-btn {
+    display: none !important;
+}
+
 /* iframe loading placeholder (before height is set by JS) */
 .cn-regex-iframe:not([style*="height"]) {
     height: 200px;

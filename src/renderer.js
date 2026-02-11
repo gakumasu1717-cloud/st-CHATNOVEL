@@ -141,9 +141,10 @@ function convertHtmlDocsToIframes(text) {
  */
 function restoreIframePlaceholders(html, iframePlaceholders) {
     if (!iframePlaceholders || iframePlaceholders.length === 0) return html;
-    // Remove surrounding <p>, <br /> tags that wrap the placeholder tokens
+    // Remove surrounding <p>, <br />, <pre>, <code> tags that wrap the placeholder tokens
+    // Markdown renderers may wrap inline tokens in code blocks or paragraphs
     return html.replace(
-        /(?:<br\s*\/?>)?\s*(?:<p[^>]*>)?\s*%%%CN_IFRAME_(\d+)%%%\s*(?:<\/p>)?\s*(?:<br\s*\/?>)?/g,
+        /(?:<br\s*\/?>)?\s*(?:<pre[^>]*>)?\s*(?:<code[^>]*>)?\s*(?:<p[^>]*>)?\s*%%%CN_IFRAME_(\d+)%%%\s*(?:<\/p>)?\s*(?:<\/code>)?\s*(?:<\/pre>)?\s*(?:<br\s*\/?>)?/g,
         (match, index) => iframePlaceholders[parseInt(index, 10)] || match
     );
 }
