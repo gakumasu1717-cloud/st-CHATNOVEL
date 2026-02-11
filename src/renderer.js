@@ -89,8 +89,10 @@ function convertHtmlDocsToIframes(text) {
     const iframeOverrideCSS = '<style>html{overflow-x:hidden!important;}::-webkit-scrollbar{display:none!important;}</style>';
 
     const processed = text.replace(htmlDocPattern, (match) => {
+        // 앞뒤 [ ] 래핑 제거 (정규식으로 이미 소비했지만 match에 포함됨)
+        let modified = match.replace(/^\s*\[/, '').replace(/\]\s*$/, '');
+
         // </head> 바로 앞에 override CSS를 주입
-        let modified = match;
         if (modified.includes('</head>')) {
             modified = modified.replace('</head>', iframeOverrideCSS + '</head>');
         } else if (modified.includes('<body')) {
@@ -99,11 +101,10 @@ function convertHtmlDocsToIframes(text) {
             modified = iframeOverrideCSS + modified;
         }
 
-        const escaped = modified
-            .replace(/&/g, '&amp;')
-            .replace(/"/g, '&quot;');
+        // Base64 인코딩 — srcdoc 따옴표 충돌 완전 회피
+        const b64 = btoa(unescape(encodeURIComponent(modified)));
 
-        const iframe = `<iframe class="cn-regex-iframe" srcdoc="${escaped}" sandbox="allow-scripts allow-same-origin" frameborder="0" scrolling="no" style="width:100%;border:none;overflow:hidden;"></iframe>`;
+        const iframe = `<iframe class="cn-regex-iframe" data-cn-html="${b64}" sandbox="allow-scripts allow-same-origin" frameborder="0" scrolling="no" style="width:100%;border:none;overflow:hidden;"></iframe>`;
         const index = iframePlaceholders.length;
         iframePlaceholders.push(iframe);
         return `\n%%%CN_IFRAME_${index}%%%\n`;

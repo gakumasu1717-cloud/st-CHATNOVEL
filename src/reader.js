@@ -451,6 +451,30 @@ function setupSingleIframe(iframe) {
     // Disable scrolling via HTML attribute
     iframe.setAttribute('scrolling', 'no');
 
+    // Base64로 저장된 HTML을 contentDocument.write()로 주입
+    const b64 = iframe.getAttribute('data-cn-html');
+    if (b64) {
+        iframe.removeAttribute('data-cn-html');
+        try {
+            const html = decodeURIComponent(escape(atob(b64)));
+            // sandbox 속성은 HTML attribute로 이미 설정됨
+            // contentDocument.write 사용을 위해 잠시 srcdoc 비우기
+            const doc = iframe.contentDocument || iframe.contentWindow?.document;
+            if (doc) {
+                doc.open();
+                doc.write(html);
+                doc.close();
+            }
+        } catch (e) {
+            console.warn('[ChatNovel] iframe write failed, fallback to srcdoc:', e);
+            // fallback: srcdoc에 직접 넣기
+            try {
+                const html = decodeURIComponent(escape(atob(b64)));
+                iframe.srcdoc = html;
+            } catch (_) { /* give up */ }
+        }
+    }
+
     const resize = () => {
         try {
             const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
@@ -726,13 +750,25 @@ function recalcPageLayout(contentEl) {
     contentEl.style.columnFill = 'auto';
     contentEl.style.paddingBottom = '0';
 
-    // 전체 페이지 수 계산
-    requestAnimationFrame(() => {
+    // iframe 로드 완료 후 재계산 (내부 높이가 바뀌면 column 수가 달라짐)
+    const iframes = contentEl.querySelectorAll('.cn-regex-iframe');
+    const doCalc = () => {
         const totalWidth = contentEl.scrollWidth;
         const pageUnit = pageWidth * 2; // column + gap
         state.totalPages = Math.max(1, Math.ceil(totalWidth / pageUnit));
         updatePageInfo(contentEl);
+    };
+
+    // 즉시 한 번 + iframe 로드마다 재계산
+    requestAnimationFrame(doCalc);
+    iframes.forEach(iframe => {
+        iframe.addEventListener('load', () => {
+            setTimeout(doCalc, 100);
+            setTimeout(doCalc, 500);
+        });
     });
+    // 안전망 — 2초 후 최종 재계산
+    setTimeout(doCalc, 2000);
 }
 
 /**
