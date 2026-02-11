@@ -44,6 +44,15 @@ const state = {
     characterKey: '',
     _escHandler: null,
     _abortController: null,
+    // 페이지 모드
+    pageMode: false,
+    currentPage: 0,
+    totalPages: 0,
+    _pageClickHandler: null,
+    _pageKeyHandler: null,
+    _pageTouchStart: null,
+    _pageTouchEnd: null,
+    _resizeHandler: null,
 };
 
 /**
@@ -117,18 +126,46 @@ export function openReader() {
 export function closeReader() {
     if (!state.isOpen || !state.overlay) return;
 
-    // Save reading position
+    // Save reading position (msgIndex-based)
     const contentEl = state.overlay.querySelector('.cn-content');
     if (contentEl) {
-        const scrollTop = contentEl.scrollTop;
+        const scrollTop = state.pageMode ? state.currentPage : contentEl.scrollTop;
         const scrollHeight = contentEl.scrollHeight - contentEl.clientHeight;
-        const progress = scrollHeight > 0 ? (scrollTop / scrollHeight) * 100 : 0;
+        const progress = state.pageMode
+            ? (state.totalPages > 1 ? (state.currentPage / (state.totalPages - 1)) * 100 : 100)
+            : (scrollHeight > 0 ? (scrollTop / scrollHeight) * 100 : 0);
+
+        // Find nearest visible message index
+        let msgIndex = 0;
+        const contentRect = contentEl.getBoundingClientRect();
+        const msgEls = contentEl.querySelectorAll('[data-msg-index]');
+        for (const el of msgEls) {
+            const rect = el.getBoundingClientRect();
+            if (rect.top >= contentRect.top) {
+                msgIndex = parseInt(el.dataset.msgIndex, 10) || 0;
+                break;
+            }
+        }
 
         saveReadingPosition(state.chatId, {
             chapterIndex: state.currentChapter,
-            scrollTop: scrollTop,
+            scrollTop: contentEl.scrollTop,
             progress: progress,
+            msgIndex: msgIndex,
+            page: state.pageMode ? state.currentPage : undefined,
         });
+    }
+
+    // Clean up page mode
+    if (state.pageMode) {
+        const cEl = state.overlay.querySelector('.cn-content');
+        if (cEl) cleanupPageNavigation(cEl);
+    }
+
+    // Clean up resize handler
+    if (state._resizeHandler) {
+        window.removeEventListener('resize', state._resizeHandler);
+        state._resizeHandler = null;
     }
 
     state.overlay.classList.add('cn-overlay-closing');
@@ -140,6 +177,9 @@ export function closeReader() {
         state.isOpen = false;
         state.chapters = [];
         state.sidebar = null;
+        state.pageMode = false;
+        state.currentPage = 0;
+        state.totalPages = 0;
 
         // Clean up ESC handler
         if (state._escHandler) {
@@ -201,7 +241,15 @@ function createOverlayShell(settings, userName, characterName) {
             <div class="cn-footer-progress">
                 <div class="cn-footer-progress-fill"></div>
             </div>
-            <div class="cn-footer-text"></div>
+            <div class="cn-footer-info">
+                <button class="cn-footer-mode-btn" title="읽기 모드 전환">📖</button>
+                <span class="cn-footer-chapter"></span>
+                <span class="cn-footer-separator">·</span>
+                <span class="cn-footer-percent">0%</span>
+                <span class="cn-footer-separator">·</span>
+                <span class="cn-footer-remaining"></span>
+                <span class="cn-footer-page-info" style="display:none"></span>
+            </div>
         </div>
     `;
 
@@ -229,6 +277,31 @@ function createOverlayShell(settings, userName, characterName) {
     overlay.querySelector('.cn-export-btn').addEventListener('click', () => {
         handleExport(userName, characterName);
     });
+
+    // Mode toggle button in footer
+    overlay.querySelector('.cn-footer-mode-btn').addEventListener('click', () => {
+        const s = getSettings();
+        const newMode = s.readingMode === 'scroll' ? 'page' : 'scroll';
+        updateSetting('readingMode', newMode);
+        const contentEl = overlay.querySelector('.cn-content');
+        if (newMode === 'page') {
+            enablePageMode(contentEl);
+        } else {
+            disablePageMode(contentEl);
+        }
+    });
+
+    // Window resize handler for page mode
+    state._resizeHandler = () => {
+        if (state.pageMode && state.overlay) {
+            const contentEl = state.overlay.querySelector('.cn-content');
+            if (contentEl) {
+                recalcPageLayout(contentEl);
+                goToPage(contentEl, state.currentPage);
+            }
+        }
+    };
+    window.addEventListener('resize', state._resizeHandler);
 
     // ESC to close (store handler reference for cleanup)
     state._escHandler = (e) => {
@@ -271,13 +344,35 @@ function loadContent(settings, userName, characterName) {
     setupScrollTracking(contentEl);
     setupKeyboardShortcuts(contentEl);
 
-    // Restore reading position
-    const savedPos = getReadingPosition(state.chatId);
-    if (savedPos && savedPos.scrollTop) {
-        setTimeout(() => {
-            contentEl.scrollTop = savedPos.scrollTop;
-        }, 100);
+    // 읽기 모드 초기화
+    if (settings.readingMode === 'page') {
+        setTimeout(() => enablePageMode(contentEl), 200);
     }
+
+    // Restore reading position — try msgIndex first, then scrollTop/page
+    const savedPos = getReadingPosition(state.chatId);
+    if (savedPos) {
+        setTimeout(() => {
+            if (state.pageMode && savedPos.page != null) {
+                goToPage(contentEl, savedPos.page);
+                return;
+            }
+            if (savedPos.msgIndex != null) {
+                const targetEl = contentEl.querySelector(`[data-msg-index="${savedPos.msgIndex}"]`);
+                if (targetEl) {
+                    const offsetTop = targetEl.offsetTop - contentEl.offsetTop;
+                    contentEl.scrollTop = offsetTop;
+                    return;
+                }
+            }
+            if (savedPos.scrollTop) {
+                contentEl.scrollTop = savedPos.scrollTop;
+            }
+        }, 300);
+    }
+
+    // Update footer info
+    updateFooterInfo(contentEl);
 
     console.log(`[ChatNovel] Opened reader: ${state.chapters.reduce((a, c) => a + c.messages.length, 0)} messages, ${state.chapters.length} chapters`);
 }
@@ -353,32 +448,75 @@ function setupIframeAutoResize(contentEl) {
  * @param {HTMLIFrameElement} iframe
  */
 function setupSingleIframe(iframe) {
-    iframe.addEventListener('load', () => {
+    // Disable scrolling via HTML attribute
+    iframe.setAttribute('scrolling', 'no');
+
+    const resize = () => {
         try {
-            const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-            const resize = () => {
-                const h = iframeDoc.documentElement?.scrollHeight
-                       || iframeDoc.body?.scrollHeight || 0;
-                if (h > 0) iframe.style.height = h + 'px';
-            };
-            resize();
+            const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+            if (!iframeDoc || !iframeDoc.body) return;
 
-            // ResizeObserver for dynamic content (collapsible panels, etc.)
-            if (iframeDoc.body && window.ResizeObserver) {
-                const ro = new ResizeObserver(resize);
-                ro.observe(iframeDoc.body);
-                // Clean up after 30 seconds
-                setTimeout(() => ro.disconnect(), 30000);
-            }
+            // Shrink to 1px so scrollHeight reflects natural content height
+            iframe.style.height = '1px';
 
-            // Retry resizes for scripts that render asynchronously
-            setTimeout(resize, 200);
-            setTimeout(resize, 800);
-            setTimeout(resize, 2000);
+            // Prevent internal scrollbars
+            iframeDoc.body.style.overflow = 'hidden';
+            iframeDoc.body.style.margin = '0';
+            iframeDoc.documentElement.style.overflow = 'hidden';
+
+            const bodyH = iframeDoc.body.scrollHeight || 0;
+            const docH = iframeDoc.documentElement.scrollHeight || 0;
+            const h = Math.max(bodyH, docH);
+
+            // +2px 여유 — 소수점 반올림 오차로 스크롤바 생기는 것 방지
+            iframe.style.height = (h > 20 ? h + 2 : 400) + 'px';
         } catch (e) {
-            // Cross-origin restriction — use fallback height
             console.warn('[ChatNovel] iframe resize failed:', e);
             iframe.style.height = '400px';
+        }
+    };
+
+    // ResizeObserver 부착 (한 번만)
+    const tryObserve = () => {
+        try {
+            const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+            if (iframeDoc?.body && window.ResizeObserver && !iframe._cnObserved) {
+                iframe._cnObserved = true;
+                const ro = new ResizeObserver(() => resize());
+                ro.observe(iframeDoc.body);
+                if (iframeDoc.documentElement) ro.observe(iframeDoc.documentElement);
+                setTimeout(() => ro.disconnect(), 30000);
+            }
+        } catch (_) { /* cross-origin */ }
+    };
+
+    // MutationObserver — 내부 JS가 DOM을 동적으로 빌드하는 경우
+    const tryMutationObserve = () => {
+        try {
+            const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+            if (iframeDoc?.body && !iframe._cnMoObserved) {
+                iframe._cnMoObserved = true;
+                const mo = new MutationObserver(() => resize());
+                mo.observe(iframeDoc.body, { childList: true, subtree: true, attributes: true });
+                setTimeout(() => mo.disconnect(), 15000);
+            }
+        } catch (_) { /* cross-origin */ }
+    };
+
+    // load 이벤트 백업
+    iframe.addEventListener('load', () => {
+        resize();
+        tryObserve();
+        tryMutationObserve();
+    });
+
+    // 공격적 재시도 — srcdoc는 동기적으로 load할 수 있음
+    const delays = [0, 50, 100, 200, 500, 1000, 2000, 4000];
+    delays.forEach(d => {
+        if (d === 0) {
+            resize(); tryObserve(); tryMutationObserve();
+        } else {
+            setTimeout(() => { resize(); tryObserve(); tryMutationObserve(); }, d);
         }
     });
 }
@@ -408,6 +546,12 @@ function setupScrollTracking(contentEl) {
 function updateProgress(contentEl) {
     if (!state.overlay) return;
 
+    // 페이지 모드에서는 별도 처리
+    if (state.pageMode) {
+        updatePageInfo(contentEl);
+        return;
+    }
+
     const scrollTop = contentEl.scrollTop;
     const scrollHeight = contentEl.scrollHeight - contentEl.clientHeight;
     const progress = scrollHeight > 0 ? (scrollTop / scrollHeight) * 100 : 0;
@@ -435,10 +579,44 @@ function updateProgress(contentEl) {
         state.sidebar?.highlightChapter(currentIdx);
     }
 
-    // Update footer text
-    const footerText = state.overlay.querySelector('.cn-footer-text');
-    if (footerText) {
-        footerText.textContent = `Ch.${currentIdx + 1} / ${state.chapters.length}  ${progress.toFixed(0)}%`;
+    // Update footer info
+    updateFooterInfo(contentEl, progress);
+}
+
+/**
+ * Update footer info bar (chapter · percent · remaining).
+ * @param {HTMLElement} contentEl
+ * @param {number} [progress]
+ */
+function updateFooterInfo(contentEl, progress) {
+    if (!state.overlay) return;
+
+    if (progress == null) {
+        const scrollHeight = contentEl.scrollHeight - contentEl.clientHeight;
+        progress = scrollHeight > 0 ? (contentEl.scrollTop / scrollHeight) * 100 : 0;
+    }
+
+    const chapterEl = state.overlay.querySelector('.cn-footer-chapter');
+    const percentEl = state.overlay.querySelector('.cn-footer-percent');
+    const remainingEl = state.overlay.querySelector('.cn-footer-remaining');
+
+    if (chapterEl) {
+        chapterEl.textContent = `${state.currentChapter + 1}/${state.chapters.length}장`;
+    }
+    if (percentEl) {
+        percentEl.textContent = `${Math.round(progress)}%`;
+    }
+    if (remainingEl) {
+        // Estimate remaining time (500 chars/min reading speed)
+        const totalChars = state.chapters.reduce((a, ch) =>
+            a + ch.messages.reduce((b, m) => b + (m.mes?.length || 0), 0), 0);
+        const remainingChars = totalChars * (1 - progress / 100);
+        const remainingMin = Math.ceil(remainingChars / 500);
+        if (remainingMin > 60) {
+            remainingEl.textContent = `약${Math.ceil(remainingMin / 60)}시간`;
+        } else {
+            remainingEl.textContent = `약${remainingMin}분`;
+        }
     }
 }
 
@@ -464,6 +642,9 @@ function scrollToChapter(chapterIdx) {
  */
 function setupKeyboardShortcuts(contentEl) {
     contentEl.addEventListener('keydown', (e) => {
+        // 페이지 모드에서는 별도 핸들러가 처리
+        if (state.pageMode) return;
+
         switch (e.key) {
             case ' ':
             case 'PageDown':
@@ -494,6 +675,231 @@ function setupKeyboardShortcuts(contentEl) {
     // Make content focusable for keyboard events
     contentEl.tabIndex = 0;
     contentEl.focus();
+}
+
+// ===== Page Mode =====
+
+/**
+ * 페이지 모드를 활성화한다.
+ * CSS columns 기반으로 콘텐츠를 페이지로 분할한다.
+ * @param {HTMLElement} contentEl
+ */
+function enablePageMode(contentEl) {
+    state.pageMode = true;
+    state.currentPage = 0;
+
+    const overlay = state.overlay;
+    overlay.classList.add('cn-page-mode');
+
+    // 콘텐츠 영역을 column 레이아웃으로 전환
+    recalcPageLayout(contentEl);
+
+    // 터치/클릭/키보드 이벤트 바인딩
+    setupPageNavigation(contentEl);
+
+    // 첫 페이지 표시
+    goToPage(contentEl, 0);
+
+    // 하단 정보 갱신
+    updatePageInfo(contentEl);
+
+    // 모드 버튼 아이콘 변경 (스크롤 아이콘으로)
+    const modeBtn = overlay.querySelector('.cn-footer-mode-btn');
+    if (modeBtn) modeBtn.textContent = '📜';
+
+    // 스크롤 모드 전용 요소 숨김, 페이지 모드 전용 표시
+    overlay.querySelector('.cn-footer-percent')?.style.setProperty('display', 'none');
+    overlay.querySelector('.cn-footer-remaining')?.style.setProperty('display', 'none');
+    overlay.querySelectorAll('.cn-footer-separator').forEach(s => s.style.display = 'none');
+    overlay.querySelector('.cn-footer-page-info')?.style.setProperty('display', '');
+}
+
+/**
+ * 페이지 레이아웃 계산.
+ * @param {HTMLElement} contentEl
+ */
+function recalcPageLayout(contentEl) {
+    const rect = contentEl.getBoundingClientRect();
+    const pageWidth = rect.width;
+    const pageHeight = rect.height;
+
+    contentEl.style.overflow = 'hidden';
+    contentEl.style.height = pageHeight + 'px';
+    contentEl.style.columnWidth = pageWidth + 'px';
+    contentEl.style.columnGap = pageWidth + 'px';
+    contentEl.style.columnFill = 'auto';
+    contentEl.style.paddingBottom = '0';
+
+    // 전체 페이지 수 계산
+    requestAnimationFrame(() => {
+        const totalWidth = contentEl.scrollWidth;
+        const pageUnit = pageWidth * 2; // column + gap
+        state.totalPages = Math.max(1, Math.ceil(totalWidth / pageUnit));
+        updatePageInfo(contentEl);
+    });
+}
+
+/**
+ * 페이지 모드 비활성화 — 스크롤 모드로 복귀.
+ * @param {HTMLElement} contentEl
+ */
+function disablePageMode(contentEl) {
+    state.pageMode = false;
+    const overlay = state.overlay;
+    overlay.classList.remove('cn-page-mode');
+
+    // CSS 초기화
+    contentEl.style.removeProperty('height');
+    contentEl.style.removeProperty('column-width');
+    contentEl.style.removeProperty('column-gap');
+    contentEl.style.removeProperty('column-fill');
+    contentEl.style.removeProperty('overflow');
+    contentEl.style.removeProperty('transform');
+    contentEl.style.paddingBottom = '';
+
+    // 모드 버튼 아이콘 복귀
+    const modeBtn = overlay.querySelector('.cn-footer-mode-btn');
+    if (modeBtn) modeBtn.textContent = '📖';
+
+    // 스크롤 모드 요소 복귀
+    overlay.querySelector('.cn-footer-percent')?.style.setProperty('display', '');
+    overlay.querySelector('.cn-footer-remaining')?.style.setProperty('display', '');
+    overlay.querySelectorAll('.cn-footer-separator').forEach(s => s.style.display = '');
+    overlay.querySelector('.cn-footer-page-info')?.style.setProperty('display', 'none');
+
+    // 이벤트 정리
+    cleanupPageNavigation(contentEl);
+}
+
+/**
+ * 특정 페이지로 이동.
+ * @param {HTMLElement} contentEl
+ * @param {number} pageNum
+ */
+function goToPage(contentEl, pageNum) {
+    if (pageNum < 0) pageNum = 0;
+    if (pageNum >= state.totalPages) pageNum = state.totalPages - 1;
+
+    state.currentPage = pageNum;
+    const rect = contentEl.getBoundingClientRect();
+    const pageUnit = rect.width * 2; // column + gap
+    const offset = pageNum * pageUnit;
+
+    contentEl.style.transform = `translateX(-${offset}px)`;
+    updatePageInfo(contentEl);
+}
+
+/**
+ * 페이지 정보 갱신 (하단 바).
+ * @param {HTMLElement} contentEl
+ */
+function updatePageInfo(contentEl) {
+    if (!state.pageMode || !state.overlay) return;
+
+    const pageInfo = state.overlay.querySelector('.cn-footer-page-info');
+    if (pageInfo) {
+        pageInfo.textContent = `${state.currentPage + 1} / ${state.totalPages || '?'}`;
+    }
+
+    const chapterEl = state.overlay.querySelector('.cn-footer-chapter');
+    if (chapterEl) {
+        chapterEl.textContent = `${state.currentChapter + 1}/${state.chapters.length}장`;
+    }
+
+    // 프로그레스바도 갱신
+    const progress = state.totalPages > 1
+        ? (state.currentPage / (state.totalPages - 1)) * 100
+        : 100;
+    const progressBar = state.overlay.querySelector('.cn-progress-bar');
+    const footerFill = state.overlay.querySelector('.cn-footer-progress-fill');
+    if (progressBar) progressBar.style.width = `${progress}%`;
+    if (footerFill) footerFill.style.width = `${progress}%`;
+}
+
+/**
+ * 페이지 네비게이션 이벤트 설정.
+ * 좌측 1/3 탭 = 이전, 우측 2/3 탭 = 다음.
+ * @param {HTMLElement} contentEl
+ */
+function setupPageNavigation(contentEl) {
+    // 클릭 네비게이션
+    state._pageClickHandler = (e) => {
+        if (e.target.closest('button, a, input, select, textarea, .cn-settings-overlay, .cn-sidebar, .cn-footer')) return;
+
+        const rect = contentEl.getBoundingClientRect();
+        const clickX = e.clientX - rect.left;
+        const thirdWidth = rect.width / 3;
+
+        if (clickX < thirdWidth) {
+            goToPage(contentEl, state.currentPage - 1);
+        } else {
+            goToPage(contentEl, state.currentPage + 1);
+        }
+    };
+    contentEl.addEventListener('click', state._pageClickHandler);
+
+    // 키보드 네비게이션
+    state._pageKeyHandler = (e) => {
+        if (!state.pageMode) return;
+        if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') {
+            e.preventDefault();
+            goToPage(contentEl, state.currentPage + 1);
+        } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+            e.preventDefault();
+            goToPage(contentEl, state.currentPage - 1);
+        } else if (e.key === 'Home') {
+            e.preventDefault();
+            goToPage(contentEl, 0);
+        } else if (e.key === 'End') {
+            e.preventDefault();
+            goToPage(contentEl, state.totalPages - 1);
+        }
+    };
+    contentEl.addEventListener('keydown', state._pageKeyHandler);
+
+    // 터치 스와이프
+    let touchStartX = 0;
+    let touchStartY = 0;
+    state._pageTouchStart = (e) => {
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
+    };
+    state._pageTouchEnd = (e) => {
+        const dx = e.changedTouches[0].clientX - touchStartX;
+        const dy = e.changedTouches[0].clientY - touchStartY;
+        if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 50) {
+            if (dx < 0) {
+                goToPage(contentEl, state.currentPage + 1);
+            } else {
+                goToPage(contentEl, state.currentPage - 1);
+            }
+        }
+    };
+    contentEl.addEventListener('touchstart', state._pageTouchStart, { passive: true });
+    contentEl.addEventListener('touchend', state._pageTouchEnd, { passive: true });
+}
+
+/**
+ * 페이지 네비게이션 이벤트 정리.
+ * @param {HTMLElement} contentEl
+ */
+function cleanupPageNavigation(contentEl) {
+    if (state._pageClickHandler) {
+        contentEl.removeEventListener('click', state._pageClickHandler);
+        state._pageClickHandler = null;
+    }
+    if (state._pageKeyHandler) {
+        contentEl.removeEventListener('keydown', state._pageKeyHandler);
+        state._pageKeyHandler = null;
+    }
+    if (state._pageTouchStart) {
+        contentEl.removeEventListener('touchstart', state._pageTouchStart);
+        state._pageTouchStart = null;
+    }
+    if (state._pageTouchEnd) {
+        contentEl.removeEventListener('touchend', state._pageTouchEnd);
+        state._pageTouchEnd = null;
+    }
 }
 
 /**
@@ -566,6 +972,9 @@ function showSettingsPanel(userName, characterName) {
 
     state.overlay.appendChild(panelContainer);
 
+    // 조건부 행 초기화
+    updateConditionalRows(panelContainer);
+
     // Close button
     panelContainer.querySelector('.cn-settings-close').addEventListener('click', () => {
         panelContainer.remove();
@@ -583,7 +992,8 @@ function showSettingsPanel(userName, characterName) {
             if (valueSpan?.classList.contains('cn-setting-value')) {
                 if (key === 'fontSize') valueSpan.textContent = `${value}px`;
                 else if (key === 'contentWidth') valueSpan.textContent = `${value}px`;
-                else if (key === 'timeGapHours') valueSpan.textContent = `${value}h`;
+                else if (key === 'timeGapHours') valueSpan.textContent = `${value}시간`;
+                else if (key === 'messagesPerChapter') valueSpan.textContent = `${value}개`;
                 else valueSpan.textContent = `${value}`;
             }
 
@@ -606,7 +1016,18 @@ function showSettingsPanel(userName, characterName) {
 
             // Re-render if chapter settings changed
             if (['chapterMode'].includes(key)) {
+                updateConditionalRows(panelContainer);
                 reRender(userName, characterName);
+            }
+
+            // 읽기 모드 전환
+            if (key === 'readingMode') {
+                const contentEl = state.overlay.querySelector('.cn-content');
+                if (select.value === 'page') {
+                    enablePageMode(contentEl);
+                } else {
+                    disablePageMode(contentEl);
+                }
             }
         });
     });
@@ -630,6 +1051,22 @@ function showSettingsPanel(userName, characterName) {
             panelContainer.querySelectorAll('.cn-theme-option').forEach(o => o.classList.remove('cn-theme-active'));
             option.classList.add('cn-theme-active');
         });
+    });
+}
+
+/**
+ * 조건부 설정 행 표시/숨김.
+ * data-show-when="chapterMode:count,both" 형태로 조건 지정.
+ * @param {HTMLElement} panelContainer
+ */
+function updateConditionalRows(panelContainer) {
+    const chapterMode = panelContainer.querySelector('[data-setting="chapterMode"]')?.value || 'count';
+    panelContainer.querySelectorAll('.cn-setting-conditional').forEach(row => {
+        const showWhen = row.dataset.showWhen;
+        if (!showWhen) return;
+        const [, values] = showWhen.split(':');
+        const allowed = values.split(',');
+        row.style.display = allowed.includes(chapterMode) ? '' : 'none';
     });
 }
 

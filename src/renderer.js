@@ -84,12 +84,25 @@ function convertHtmlDocsToIframes(text) {
 
     const htmlDocPattern = /(?:<!DOCTYPE\s+html[^>]*>[\s\S]*?<\/html>|<html[^>]*>[\s\S]*?<\/html>)/gi;
 
+    // iframe 내부에 주입할 스크롤바 제거 + 오버플로우 방지 CSS
+    const iframeOverrideCSS = '<style>html,body{overflow:hidden!important;margin:0;padding:0;}body{min-height:auto!important;}</style>';
+
     const processed = text.replace(htmlDocPattern, (match) => {
-        const escaped = match
+        // </head> 바로 앞에 override CSS를 주입
+        let modified = match;
+        if (modified.includes('</head>')) {
+            modified = modified.replace('</head>', iframeOverrideCSS + '</head>');
+        } else if (modified.includes('<body')) {
+            modified = modified.replace('<body', iframeOverrideCSS + '<body');
+        } else {
+            modified = iframeOverrideCSS + modified;
+        }
+
+        const escaped = modified
             .replace(/&/g, '&amp;')
             .replace(/"/g, '&quot;');
 
-        const iframe = `<iframe class="cn-regex-iframe" srcdoc="${escaped}" sandbox="allow-scripts allow-same-origin" frameborder="0" scrolling="no"></iframe>`;
+        const iframe = `<iframe class="cn-regex-iframe" srcdoc="${escaped}" sandbox="allow-scripts allow-same-origin" frameborder="0" scrolling="no" style="width:100%;border:none;overflow:hidden;"></iframe>`;
         const index = iframePlaceholders.length;
         iframePlaceholders.push(iframe);
         return `\n%%%CN_IFRAME_${index}%%%\n`;
@@ -107,10 +120,38 @@ function convertHtmlDocsToIframes(text) {
  */
 function restoreIframePlaceholders(html, iframePlaceholders) {
     if (!iframePlaceholders || iframePlaceholders.length === 0) return html;
+    // Remove surrounding <p>, <br /> tags that wrap the placeholder tokens
     return html.replace(
-        /(?:<p[^>]*>)?\s*%%%CN_IFRAME_(\d+)%%%\s*(?:<\/p>)?/g,
+        /(?:<br\s*\/?>)?\s*(?:<p[^>]*>)?\s*%%%CN_IFRAME_(\d+)%%%\s*(?:<\/p>)?\s*(?:<br\s*\/?>)?/g,
         (match, index) => iframePlaceholders[parseInt(index, 10)] || match
     );
+}
+
+// ===== Cursor Marker Removal =====
+
+/**
+ * Remove cursor markers from text.
+ * ST regex scripts / extensions sometimes insert cursor position markers
+ * (vertical bars, zero-width spaces, custom span tags) that are hidden
+ * in ST chat via CSS but visible in plain text.
+ * @param {string} text
+ * @returns {string}
+ */
+function removeCursorMarkers(text) {
+    if (!text) return text;
+
+    // 1. JS-Slash-Runner 커서 마커 패턴들
+    //    - 단독 줄의 | (파이프) 문자 — 블록 시작/끝 표시
+    text = text.replace(/^\s*\|\s*$/gm, '');
+
+    // 2. <cursor> 또는 {{cursor}} 매크로 잔여물
+    text = text.replace(/<cursor\s*\/?>/gi, '');
+    text = text.replace(/\{\{cursor\}\}/gi, '');
+
+    // 3. 빈 줄 정리 — 연속 3개 이상의 빈 줄을 2개로 축소
+    text = text.replace(/\n{3,}/g, '\n\n');
+
+    return text;
 }
 
 // ===== Choices Processing =====
@@ -466,6 +507,9 @@ export function renderMessage(message, options) {
     // 3. Unwrap "이전 정보" details blocks — remove wrapper tags, keep content.
     // Current DOCTYPEs (status panels) are inside these blocks.
     text = unwrapPreviousInfoBlocks(text);
+
+    // 3.5. 커서 마커 제거 — 정규식 스크립트 출력물에 포함된 커서 표시자
+    text = removeCursorMarkers(text);
 
     // 4. Convert complete HTML documents → placeholders BEFORE markdown.
     // Code fences protect OLD DOCTYPEs; only CURRENT ones (outside ```) are converted.

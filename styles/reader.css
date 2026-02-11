@@ -660,11 +660,31 @@ body.cn-reader-open {
     border-radius: 0 2px 2px 0;
 }
 
-.cn-footer-text {
-    text-align: center;
+.cn-footer-info {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
     font-size: 12px;
     color: var(--cn-text-secondary);
     padding: 4px 0;
+    font-variant-numeric: tabular-nums;
+}
+
+.cn-footer-mode-btn {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+    padding: 0 4px;
+    line-height: 1;
+}
+
+.cn-footer-separator {
+    opacity: 0.5;
+}
+
+.cn-footer-page-info {
     font-variant-numeric: tabular-nums;
 }
 
@@ -833,6 +853,13 @@ body.cn-reader-open {
     font-size: 12px;
 }
 
+.cn-setting-hint {
+    font-size: 11px;
+    color: var(--cn-text-secondary);
+    padding: 0 4px 8px;
+    line-height: 1.4;
+}
+
 /* Theme Grid */
 .cn-theme-grid {
     display: grid;
@@ -958,6 +985,42 @@ body.cn-reader-open {
     50% { opacity: 1; }
 }
 
+/* ===== 페이지 모드 ===== */
+
+/* 페이지 모드 활성화 시 콘텐츠 영역 */
+.cn-page-mode .cn-content {
+    overflow: hidden !important;
+    scroll-behavior: auto !important;
+    transition: transform 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.cn-page-mode .cn-content::-webkit-scrollbar {
+    display: none;
+}
+
+/* 페이지 모드에서 이미지가 페이지를 넘지 않도록 */
+.cn-page-mode .cn-content img {
+    max-height: 80vh;
+    object-fit: contain;
+    break-inside: avoid;
+}
+
+/* 페이지 모드에서 챕터/메시지 분할 방지 */
+.cn-page-mode .cn-chapter-title {
+    break-after: avoid;
+}
+
+.cn-page-mode .cn-message {
+    break-inside: avoid-column;
+}
+
+/* 페이지 모드에서 iframe도 분할 방지 */
+.cn-page-mode .cn-regex-iframe {
+    break-inside: avoid-column;
+}
+
 /* ===== Print Styles ===== */
 @media print {
     .cn-overlay {
@@ -1056,6 +1119,15 @@ body.cn-reader-open {
 .cn-regex-iframe:not([style*="height"]) {
     height: 200px;
     background: var(--cn-bg, #f8f9fa);
+}
+
+/* Hide empty <br> / <p> that appear before/after iframes (from \n around DOCTYPEs) */
+.cn-msg-body > br:first-child,
+.cn-msg-body > br:last-child {
+    display: none;
+}
+.cn-msg-body > p:empty {
+    display: none;
 }
 
 /* Blockquote styling */

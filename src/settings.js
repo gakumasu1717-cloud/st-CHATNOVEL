@@ -7,7 +7,7 @@ const MODULE_NAME = 'chat_novel';
 
 const DEFAULT_SETTINGS = Object.freeze({
     // Theme
-    theme: 'dark-noble',
+    theme: 'ridi-dark',
 
     // Typography
     fontSize: 16,
@@ -27,6 +27,9 @@ const DEFAULT_SETTINGS = Object.freeze({
 
     // Export
     exportImageMode: 'url', // 'base64' | 'url'
+
+    // Reading mode
+    readingMode: 'scroll', // 'scroll' | 'page'
 
     // Reading position (per-chat)
     readingPositions: {},
@@ -51,6 +54,13 @@ export function loadSettings() {
                 ? structuredClone(DEFAULT_SETTINGS[key])
                 : DEFAULT_SETTINGS[key];
         }
+    }
+
+    // Theme migration: old theme names that no longer exist
+    const validThemes = ['ridi-light', 'ridi-dark', 'kakao-light', 'kakao-dark', 'warm-paper', 'midnight'];
+    if (extensionSettings[MODULE_NAME].theme && !validThemes.includes(extensionSettings[MODULE_NAME].theme)) {
+        console.warn(`[ChatNovel] Migrating unknown theme '${extensionSettings[MODULE_NAME].theme}' to 'ridi-dark'`);
+        extensionSettings[MODULE_NAME].theme = 'ridi-dark';
     }
 
     return extensionSettings[MODULE_NAME];
@@ -149,6 +159,7 @@ export function resetSettings() {
  * @returns {string}
  */
 export function createSettingsPanelHtml(currentSettings, themeList) {
+    const s = currentSettings;
     return `
     <div class="cn-settings-panel">
         <div class="cn-settings-header">
@@ -157,29 +168,44 @@ export function createSettingsPanelHtml(currentSettings, themeList) {
         </div>
 
         <div class="cn-settings-body">
+            <!-- 읽기 모드 -->
+            <div class="cn-settings-section">
+                <h4>읽기 모드</h4>
+                <div class="cn-setting-row">
+                    <label>모드</label>
+                    <select class="cn-setting-input" data-setting="readingMode">
+                        <option value="scroll" ${s.readingMode === 'scroll' ? 'selected' : ''}>스크롤</option>
+                        <option value="page" ${s.readingMode === 'page' ? 'selected' : ''}>페이지 넘김</option>
+                    </select>
+                </div>
+            </div>
+
             <!-- Chapter Settings -->
             <div class="cn-settings-section">
                 <h4>챕터 분할</h4>
                 <div class="cn-setting-row">
-                    <label>분할 모드</label>
+                    <label>분할 기준</label>
                     <select class="cn-setting-input" data-setting="chapterMode">
-                        <option value="count" ${currentSettings.chapterMode === 'count' ? 'selected' : ''}>메시지 수</option>
-                        <option value="time" ${currentSettings.chapterMode === 'time' ? 'selected' : ''}>시간 간격</option>
-                        <option value="both" ${currentSettings.chapterMode === 'both' ? 'selected' : ''}>메시지 수 + 시간</option>
-                        <option value="none" ${currentSettings.chapterMode === 'none' ? 'selected' : ''}>분할 안 함</option>
+                        <option value="count" ${s.chapterMode === 'count' ? 'selected' : ''}>메시지 수 기준</option>
+                        <option value="time" ${s.chapterMode === 'time' ? 'selected' : ''}>대화 공백 시간 기준</option>
+                        <option value="both" ${s.chapterMode === 'both' ? 'selected' : ''}>메시지 수 + 대화 공백</option>
+                        <option value="none" ${s.chapterMode === 'none' ? 'selected' : ''}>분할 안 함 (1챕터)</option>
                     </select>
                 </div>
-                <div class="cn-setting-row">
-                    <label>챕터당 메시지 수</label>
+                <div class="cn-setting-row cn-setting-conditional" data-show-when="chapterMode:count,both">
+                    <label>챕터당 메시지</label>
                     <input type="range" class="cn-setting-input" data-setting="messagesPerChapter"
-                        min="5" max="100" step="5" value="${currentSettings.messagesPerChapter}" />
-                    <span class="cn-setting-value">${currentSettings.messagesPerChapter}</span>
+                        min="5" max="100" step="5" value="${s.messagesPerChapter}" />
+                    <span class="cn-setting-value">${s.messagesPerChapter}개</span>
                 </div>
-                <div class="cn-setting-row">
-                    <label>시간 간격 (시간)</label>
+                <div class="cn-setting-row cn-setting-conditional" data-show-when="chapterMode:time,both">
+                    <label>공백 시간 기준</label>
                     <input type="range" class="cn-setting-input" data-setting="timeGapHours"
-                        min="1" max="48" step="1" value="${currentSettings.timeGapHours}" />
-                    <span class="cn-setting-value">${currentSettings.timeGapHours}h</span>
+                        min="1" max="48" step="1" value="${s.timeGapHours}" />
+                    <span class="cn-setting-value">${s.timeGapHours}시간</span>
+                </div>
+                <div class="cn-setting-hint cn-setting-conditional" data-show-when="chapterMode:time,both">
+                    메시지 사이 공백이 위 시간을 넘으면 새 챕터로 나눕니다.
                 </div>
             </div>
 
@@ -189,26 +215,26 @@ export function createSettingsPanelHtml(currentSettings, themeList) {
                 <div class="cn-setting-row">
                     <label>글꼴 크기</label>
                     <input type="range" class="cn-setting-input" data-setting="fontSize"
-                        min="12" max="24" step="1" value="${currentSettings.fontSize}" />
-                    <span class="cn-setting-value">${currentSettings.fontSize}px</span>
+                        min="12" max="24" step="1" value="${s.fontSize}" />
+                    <span class="cn-setting-value">${s.fontSize}px</span>
                 </div>
                 <div class="cn-setting-row">
                     <label>줄 간격</label>
                     <input type="range" class="cn-setting-input" data-setting="lineHeight"
-                        min="1.4" max="2.4" step="0.1" value="${currentSettings.lineHeight}" />
-                    <span class="cn-setting-value">${currentSettings.lineHeight}</span>
+                        min="1.4" max="2.4" step="0.1" value="${s.lineHeight}" />
+                    <span class="cn-setting-value">${s.lineHeight}</span>
                 </div>
                 <div class="cn-setting-row">
                     <label>본문 너비</label>
                     <input type="range" class="cn-setting-input" data-setting="contentWidth"
-                        min="500" max="900" step="50" value="${currentSettings.contentWidth}" />
-                    <span class="cn-setting-value">${currentSettings.contentWidth}px</span>
+                        min="500" max="900" step="50" value="${s.contentWidth}" />
+                    <span class="cn-setting-value">${s.contentWidth}px</span>
                 </div>
                 <div class="cn-setting-row">
                     <label>글꼴 종류</label>
                     <select class="cn-setting-input" data-setting="fontFamily">
-                        <option value="gothic" ${currentSettings.fontFamily === 'gothic' ? 'selected' : ''}>고딕</option>
-                        <option value="serif" ${currentSettings.fontFamily === 'serif' ? 'selected' : ''}>명조</option>
+                        <option value="gothic" ${s.fontFamily === 'gothic' ? 'selected' : ''}>고딕</option>
+                        <option value="serif" ${s.fontFamily === 'serif' ? 'selected' : ''}>명조</option>
                     </select>
                 </div>
             </div>
@@ -219,17 +245,17 @@ export function createSettingsPanelHtml(currentSettings, themeList) {
                 <div class="cn-setting-row">
                     <label>대사 스타일링</label>
                     <input type="checkbox" class="cn-setting-input" data-setting="dialogueEnabled"
-                        ${currentSettings.dialogueEnabled ? 'checked' : ''} />
+                        ${s.dialogueEnabled ? 'checked' : ''} />
                 </div>
                 <div class="cn-setting-row">
                     <label>이미지 표시</label>
                     <input type="checkbox" class="cn-setting-input" data-setting="showImages"
-                        ${currentSettings.showImages ? 'checked' : ''} />
+                        ${s.showImages ? 'checked' : ''} />
                 </div>
                 <div class="cn-setting-row">
                     <label>발화자 이름 표시</label>
                     <input type="checkbox" class="cn-setting-input" data-setting="showSenderName"
-                        ${currentSettings.showSenderName ? 'checked' : ''} />
+                        ${s.showSenderName ? 'checked' : ''} />
                 </div>
             </div>
 
@@ -238,7 +264,7 @@ export function createSettingsPanelHtml(currentSettings, themeList) {
                 <h4>🎨 테마</h4>
                 <div class="cn-theme-grid">
                     ${themeList.map(t => `
-                        <div class="cn-theme-option ${t.id === currentSettings.theme ? 'cn-theme-active' : ''}"
+                        <div class="cn-theme-option ${t.id === s.theme ? 'cn-theme-active' : ''}"
                              data-theme="${t.id}">
                             <div class="cn-theme-name">${t.name}</div>
                             <div class="cn-theme-desc">${t.description}</div>
@@ -253,8 +279,8 @@ export function createSettingsPanelHtml(currentSettings, themeList) {
                 <div class="cn-setting-row">
                     <label>이미지 처리</label>
                     <select class="cn-setting-input" data-setting="exportImageMode">
-                        <option value="url" ${currentSettings.exportImageMode === 'url' ? 'selected' : ''}>URL 참조 (가벼움)</option>
-                        <option value="base64" ${currentSettings.exportImageMode === 'base64' ? 'selected' : ''}>Base64 임베드 (독립)</option>
+                        <option value="url" ${s.exportImageMode === 'url' ? 'selected' : ''}>URL 참조 (가벼움)</option>
+                        <option value="base64" ${s.exportImageMode === 'base64' ? 'selected' : ''}>Base64 임베드 (독립)</option>
                     </select>
                 </div>
             </div>

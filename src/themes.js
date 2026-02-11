@@ -115,10 +115,11 @@ export const THEMES = {
  * @param {string} themeId
  */
 export function applyTheme(container, themeId) {
-    const theme = THEMES[themeId];
+    let theme = THEMES[themeId];
     if (!theme) {
-        console.warn(`[ChatNovel] Unknown theme: ${themeId}`);
-        return;
+        console.warn(`[ChatNovel] Unknown theme: ${themeId}, falling back to ridi-dark`);
+        themeId = 'ridi-dark';
+        theme = THEMES[themeId];
     }
 
     const vars = {
