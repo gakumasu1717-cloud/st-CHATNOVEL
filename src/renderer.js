@@ -90,13 +90,11 @@ function convertHtmlDocsToIframes(text) {
     const iframeResizeScript = `<script>
 (function(){
   var lastH=0;
-  function sendH(){
-    var h=Math.max(
-      document.body.scrollHeight||0,
-      document.body.offsetHeight||0,
-      document.body.getBoundingClientRect().height||0
-    );
-    if(Math.abs(lastH-h)>2){
+  function sendH(force){
+    var b=document.body;
+    if(!b)return;
+    var h=b.getBoundingClientRect().height;
+    if(force||Math.abs(lastH-h)>2){
       lastH=h;
       window.parent.postMessage({type:'cn-iframe-resize',height:h},'*');
     }
@@ -105,10 +103,11 @@ function convertHtmlDocsToIframes(text) {
   document.addEventListener('DOMContentLoaded',function(){
     document.querySelectorAll('details').forEach(function(d){
       d.addEventListener('toggle',function(){
-        setTimeout(sendH,10);
-        setTimeout(sendH,50);
-        setTimeout(sendH,200);
-        setTimeout(sendH,500);
+        lastH=0;
+        setTimeout(function(){sendH(true);},10);
+        setTimeout(function(){sendH(true);},50);
+        setTimeout(function(){sendH(true);},200);
+        setTimeout(function(){sendH(true);},500);
       });
     });
   });
