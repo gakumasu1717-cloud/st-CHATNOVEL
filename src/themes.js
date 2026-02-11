@@ -174,6 +174,13 @@ export function applyTypography(container, settings) {
         const families = {
             'gothic': "'Pretendard', 'Noto Sans KR', -apple-system, sans-serif",
             'serif': "'Noto Serif KR', 'Batang', Georgia, serif",
+            'nanumgothic': "'NanumGothic', 'Nanum Gothic', 'Noto Sans KR', sans-serif",
+            'nanummyeongjo': "'NanumMyeongjo', 'Nanum Myeongjo', 'Noto Serif KR', serif",
+            'nanumbarun': "'NanumBarunGothic', 'Nanum Barun Gothic', sans-serif",
+            'ridibatang': "'RIDIBatang', 'Noto Serif KR', serif",
+            'kopubworld': "'KoPubWorld돋움체', 'KoPubWorldDotum', sans-serif",
+            'spoqa': "'Spoqa Han Sans Neo', 'Spoqa Han Sans', sans-serif",
+            'iropke': "'Iropke Batang', 'Noto Serif KR', serif",
         };
         container.style.setProperty('--cn-font-family', families[settings.fontFamily] || families.gothic);
     }

@@ -14,6 +14,8 @@ import { applyTheme, applyTypography, getThemeList } from './themes.js';
 import {
     getSettings, updateSetting, saveReadingPosition,
     getReadingPosition, createSettingsPanelHtml,
+    getBookmarks, addBookmark, removeBookmark,
+    getChapterNames, setChapterName,
 } from './settings.js';
 import { exportToHtml, downloadHtml } from './exporter.js';
 import { escapeHtml } from './utils.js';
@@ -333,10 +335,50 @@ function loadContent(settings, userName, characterName) {
     const contentEl = state.overlay.querySelector('.cn-content');
     renderAllChapters(contentEl, settings, userName, characterName);
 
-    // Setup sidebar
+    // Apply custom chapter names
+    const customNames = getChapterNames(state.chatId);
+    for (const ch of state.chapters) {
+        if (customNames[ch.index] != null) {
+            ch.title = customNames[ch.index];
+        }
+    }
+
+    // Setup sidebar with bookmarks, chapter rename
     const sidebarContainer = state.overlay.querySelector('.cn-sidebar-container');
     state.sidebar = createSidebar(sidebarContainer, state.chapters, (chapterIdx) => {
         scrollToChapter(chapterIdx);
+    }, {
+        bookmarks: getBookmarks(state.chatId),
+        chapterNames: customNames,
+        onBookmarkClick: (msgIndex) => {
+            const contentEl = state.overlay.querySelector('.cn-content');
+            const msgEl = contentEl.querySelector(`[data-msg-index="${msgIndex}"]`);
+            if (msgEl) {
+                if (state.pageMode) {
+                    // Find which page contains this message
+                    const rect = contentEl.getBoundingClientRect();
+                    const pageUnit = rect.width * 2;
+                    const msgLeft = msgEl.offsetLeft;
+                    const page = Math.floor(msgLeft / pageUnit);
+                    goToPage(contentEl, page);
+                } else {
+                    msgEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+                msgEl.classList.add('cn-msg-highlight');
+                setTimeout(() => msgEl.classList.remove('cn-msg-highlight'), 2000);
+            }
+        },
+        onBookmarkRemove: (msgIndex) => {
+            removeBookmark(state.chatId, msgIndex);
+        },
+        onChapterRename: (chapterIdx, newName) => {
+            setChapterName(state.chatId, chapterIdx, newName);
+            // Update the chapter title in DOM as well
+            const chapterTitleEl = state.overlay.querySelector(`#cn-chapter-${chapterIdx} .cn-chapter-title`);
+            if (chapterTitleEl) chapterTitleEl.textContent = newName;
+            // Update state
+            if (state.chapters[chapterIdx]) state.chapters[chapterIdx].title = newName;
+        },
     });
     sidebarContainer.appendChild(state.sidebar.element);
 
@@ -373,6 +415,9 @@ function loadContent(settings, userName, characterName) {
 
     // Update footer info
     updateFooterInfo(contentEl);
+
+    // Setup bookmark context menu on messages
+    setupBookmarkContextMenu(contentEl);
 
     console.log(`[ChatNovel] Opened reader: ${state.chapters.reduce((a, c) => a + c.messages.length, 0)} messages, ${state.chapters.length} chapters`);
 }
@@ -937,6 +982,137 @@ function cleanupPageNavigation(contentEl) {
 /**
  * Show the theme quick-switcher.
  */
+// ===== Bookmark Context Menu =====
+
+/**
+ * Set up right-click context menu on messages for adding bookmarks.
+ * @param {HTMLElement} contentEl
+ */
+function setupBookmarkContextMenu(contentEl) {
+    contentEl.addEventListener('contextmenu', (e) => {
+        const msgEl = e.target.closest('.cn-message[data-msg-index]');
+        if (!msgEl) return;
+
+        e.preventDefault();
+
+        // Remove any existing context menu
+        const existing = state.overlay.querySelector('.cn-context-menu');
+        if (existing) existing.remove();
+
+        const msgIndex = parseInt(msgEl.dataset.msgIndex, 10);
+        const existingBm = getBookmarks(state.chatId).find(b => b.msgIndex === msgIndex);
+
+        const menu = document.createElement('div');
+        menu.className = 'cn-context-menu';
+        menu.style.left = `${e.clientX}px`;
+        menu.style.top = `${e.clientY}px`;
+
+        if (existingBm) {
+            menu.innerHTML = `
+                <div class="cn-context-item cn-context-remove-bm">🔖 북마크 삭제</div>
+                <div class="cn-context-item cn-context-rename-bm">✏️ 북마크 이름 변경</div>
+            `;
+            menu.querySelector('.cn-context-remove-bm').addEventListener('click', () => {
+                removeBookmark(state.chatId, msgIndex);
+                msgEl.classList.remove('cn-bookmarked');
+                menu.remove();
+                // Update sidebar
+                refreshSidebar();
+            });
+            menu.querySelector('.cn-context-rename-bm').addEventListener('click', () => {
+                menu.remove();
+                const newLabel = prompt('북마크 이름:', existingBm.label || '');
+                if (newLabel != null) {
+                    addBookmark(state.chatId, msgIndex, newLabel);
+                    refreshSidebar();
+                }
+            });
+        } else {
+            // Extract preview text (first 30 chars of message body)
+            const bodyEl = msgEl.querySelector('.cn-msg-body');
+            const previewText = (bodyEl?.textContent || '').substring(0, 40).trim() || `메시지 #${msgIndex}`;
+
+            menu.innerHTML = `
+                <div class="cn-context-item cn-context-add-bm">🔖 북마크 추가</div>
+            `;
+            menu.querySelector('.cn-context-add-bm').addEventListener('click', () => {
+                menu.remove();
+                const label = prompt('북마크 이름:', previewText);
+                if (label != null) {
+                    addBookmark(state.chatId, msgIndex, label || previewText);
+                    msgEl.classList.add('cn-bookmarked');
+                    refreshSidebar();
+                }
+            });
+        }
+
+        state.overlay.appendChild(menu);
+
+        // Close on click outside
+        const close = (ev) => {
+            if (!menu.contains(ev.target)) {
+                menu.remove();
+                document.removeEventListener('click', close);
+            }
+        };
+        setTimeout(() => document.addEventListener('click', close), 0);
+    });
+
+    // Mark already-bookmarked messages
+    const bookmarks = getBookmarks(state.chatId);
+    for (const bm of bookmarks) {
+        const el = contentEl.querySelector(`[data-msg-index="${bm.msgIndex}"]`);
+        if (el) el.classList.add('cn-bookmarked');
+    }
+}
+
+/**
+ * Refresh sidebar to reflect bookmark/chapter name changes.
+ */
+function refreshSidebar() {
+    if (!state.overlay) return;
+    const contentEl = state.overlay.querySelector('.cn-content');
+    const sidebarContainer = state.overlay.querySelector('.cn-sidebar-container');
+    if (!sidebarContainer) return;
+
+    const customNames = getChapterNames(state.chatId);
+    sidebarContainer.innerHTML = '';
+    state.sidebar = createSidebar(sidebarContainer, state.chapters, (chapterIdx) => {
+        scrollToChapter(chapterIdx);
+    }, {
+        bookmarks: getBookmarks(state.chatId),
+        chapterNames: customNames,
+        onBookmarkClick: (msgIndex) => {
+            const msgEl = contentEl?.querySelector(`[data-msg-index="${msgIndex}"]`);
+            if (msgEl) {
+                if (state.pageMode) {
+                    const rect = contentEl.getBoundingClientRect();
+                    const pageUnit = rect.width * 2;
+                    const page = Math.floor(msgEl.offsetLeft / pageUnit);
+                    goToPage(contentEl, page);
+                } else {
+                    msgEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+                msgEl.classList.add('cn-msg-highlight');
+                setTimeout(() => msgEl.classList.remove('cn-msg-highlight'), 2000);
+            }
+        },
+        onBookmarkRemove: (msgIndex) => {
+            removeBookmark(state.chatId, msgIndex);
+            const el = contentEl?.querySelector(`[data-msg-index="${msgIndex}"]`);
+            if (el) el.classList.remove('cn-bookmarked');
+        },
+        onChapterRename: (chapterIdx, newName) => {
+            setChapterName(state.chatId, chapterIdx, newName);
+            const chapterTitleEl = state.overlay.querySelector(`#cn-chapter-${chapterIdx} .cn-chapter-title`);
+            if (chapterTitleEl) chapterTitleEl.textContent = newName;
+            if (state.chapters[chapterIdx]) state.chapters[chapterIdx].title = newName;
+        },
+    });
+    sidebarContainer.appendChild(state.sidebar.element);
+    state.sidebar.highlightChapter(state.currentChapter);
+}
+
 function showThemePanel() {
     const existing = state.overlay?.querySelector('.cn-theme-popup');
     if (existing) {
@@ -1119,16 +1295,47 @@ function reRender(userName, characterName) {
         timeGapHours: settings.timeGapHours,
     });
 
+    // Apply custom chapter names
+    const customNames = getChapterNames(state.chatId);
+    for (const ch of state.chapters) {
+        if (customNames[ch.index] != null) {
+            ch.title = customNames[ch.index];
+        }
+    }
+
     const contentEl = state.overlay.querySelector('.cn-content');
     renderAllChapters(contentEl, settings, userName, characterName);
 
-    // Rebuild sidebar
+    // Rebuild sidebar with bookmarks
     const sidebarContainer = state.overlay.querySelector('.cn-sidebar-container');
     sidebarContainer.innerHTML = '';
     state.sidebar = createSidebar(sidebarContainer, state.chapters, (chapterIdx) => {
         scrollToChapter(chapterIdx);
+    }, {
+        bookmarks: getBookmarks(state.chatId),
+        chapterNames: customNames,
+        onBookmarkClick: (msgIndex) => {
+            const msgEl = contentEl.querySelector(`[data-msg-index="${msgIndex}"]`);
+            if (msgEl) {
+                msgEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                msgEl.classList.add('cn-msg-highlight');
+                setTimeout(() => msgEl.classList.remove('cn-msg-highlight'), 2000);
+            }
+        },
+        onBookmarkRemove: (msgIndex) => {
+            removeBookmark(state.chatId, msgIndex);
+        },
+        onChapterRename: (chapterIdx, newName) => {
+            setChapterName(state.chatId, chapterIdx, newName);
+            const chapterTitleEl = state.overlay.querySelector(`#cn-chapter-${chapterIdx} .cn-chapter-title`);
+            if (chapterTitleEl) chapterTitleEl.textContent = newName;
+            if (state.chapters[chapterIdx]) state.chapters[chapterIdx].title = newName;
+        },
     });
     sidebarContainer.appendChild(state.sidebar.element);
+
+    // Re-setup bookmark context menu
+    setupBookmarkContextMenu(contentEl);
 }
 
 /**

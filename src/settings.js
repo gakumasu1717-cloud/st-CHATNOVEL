@@ -31,6 +31,12 @@ const DEFAULT_SETTINGS = Object.freeze({
     // Reading mode
     readingMode: 'scroll', // 'scroll' | 'page'
 
+    // Bookmarks (per-chat): { chatId: [ { msgIndex, label, timestamp } ] }
+    bookmarks: {},
+
+    // Custom chapter names (per-chat): { chatId: { chapterIdx: 'name' } }
+    chapterNames: {},
+
     // Reading position (per-chat)
     readingPositions: {},
 });
@@ -152,6 +158,88 @@ export function resetSettings() {
     saveSettings();
 }
 
+// ===== Bookmarks =====
+
+/**
+ * Get bookmarks for a specific chat.
+ * @param {string} chatId
+ * @returns {Array<{msgIndex: number, label: string, timestamp: number}>}
+ */
+export function getBookmarks(chatId) {
+    if (!chatId) return [];
+    const settings = loadSettings();
+    return settings.bookmarks?.[chatId] || [];
+}
+
+/**
+ * Add a bookmark.
+ * @param {string} chatId
+ * @param {number} msgIndex
+ * @param {string} label
+ */
+export function addBookmark(chatId, msgIndex, label) {
+    if (!chatId) return;
+    const settings = loadSettings();
+    if (!settings.bookmarks) settings.bookmarks = {};
+    if (!settings.bookmarks[chatId]) settings.bookmarks[chatId] = [];
+    // Prevent duplicates
+    const existing = settings.bookmarks[chatId].find(b => b.msgIndex === msgIndex);
+    if (existing) {
+        existing.label = label;
+        existing.timestamp = Date.now();
+    } else {
+        settings.bookmarks[chatId].push({ msgIndex, label, timestamp: Date.now() });
+    }
+    // Sort by msgIndex
+    settings.bookmarks[chatId].sort((a, b) => a.msgIndex - b.msgIndex);
+    saveSettings();
+}
+
+/**
+ * Remove a bookmark.
+ * @param {string} chatId
+ * @param {number} msgIndex
+ */
+export function removeBookmark(chatId, msgIndex) {
+    if (!chatId) return;
+    const settings = loadSettings();
+    if (!settings.bookmarks?.[chatId]) return;
+    settings.bookmarks[chatId] = settings.bookmarks[chatId].filter(b => b.msgIndex !== msgIndex);
+    saveSettings();
+}
+
+// ===== Custom Chapter Names =====
+
+/**
+ * Get custom chapter names for a chat.
+ * @param {string} chatId
+ * @returns {Object} { chapterIndex: 'name' }
+ */
+export function getChapterNames(chatId) {
+    if (!chatId) return {};
+    const settings = loadSettings();
+    return settings.chapterNames?.[chatId] || {};
+}
+
+/**
+ * Set a custom chapter name.
+ * @param {string} chatId
+ * @param {number} chapterIndex
+ * @param {string} name
+ */
+export function setChapterName(chatId, chapterIndex, name) {
+    if (!chatId) return;
+    const settings = loadSettings();
+    if (!settings.chapterNames) settings.chapterNames = {};
+    if (!settings.chapterNames[chatId]) settings.chapterNames[chatId] = {};
+    if (name && name.trim()) {
+        settings.chapterNames[chatId][chapterIndex] = name.trim();
+    } else {
+        delete settings.chapterNames[chatId][chapterIndex];
+    }
+    saveSettings();
+}
+
 /**
  * Create settings panel HTML.
  * @param {Object} currentSettings - Current settings values
@@ -233,8 +321,15 @@ export function createSettingsPanelHtml(currentSettings, themeList) {
                 <div class="cn-setting-row">
                     <label>글꼴 종류</label>
                     <select class="cn-setting-input" data-setting="fontFamily">
-                        <option value="gothic" ${s.fontFamily === 'gothic' ? 'selected' : ''}>고딕</option>
-                        <option value="serif" ${s.fontFamily === 'serif' ? 'selected' : ''}>명조</option>
+                        <option value="gothic" ${s.fontFamily === 'gothic' ? 'selected' : ''}>고딕 (Pretendard)</option>
+                        <option value="serif" ${s.fontFamily === 'serif' ? 'selected' : ''}>명조 (Noto Serif KR)</option>
+                        <option value="nanumgothic" ${s.fontFamily === 'nanumgothic' ? 'selected' : ''}>나눔고딕</option>
+                        <option value="nanummyeongjo" ${s.fontFamily === 'nanummyeongjo' ? 'selected' : ''}>나눔명조</option>
+                        <option value="nanumbarun" ${s.fontFamily === 'nanumbarun' ? 'selected' : ''}>나눔바른고딕</option>
+                        <option value="ridibatang" ${s.fontFamily === 'ridibatang' ? 'selected' : ''}>리디바탕</option>
+                        <option value="kopubworld" ${s.fontFamily === 'kopubworld' ? 'selected' : ''}>KoPub돋움</option>
+                        <option value="spoqa" ${s.fontFamily === 'spoqa' ? 'selected' : ''}>Spoqa Han Sans</option>
+                        <option value="iropke" ${s.fontFamily === 'iropke' ? 'selected' : ''}>이롭게 바탕</option>
                     </select>
                 </div>
             </div>
